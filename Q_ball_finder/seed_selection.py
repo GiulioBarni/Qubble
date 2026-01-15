@@ -15,7 +15,7 @@ import numpy as np
 from .ansatz import build_negative_mode_ansatz, build_qball_like_plateau_ansatz
 from .bounce2d import QBall2DSolver, QBall2DSettings
 from .grid import RadialTimeGrid, pack_fields, unpack_fields
-from .nr_solver import newton_solve
+from .nr_solver import newton_solve, NewtonConvergenceError
 from .potentials import LogisticPotentialParams
 from .profiles import QBallProfile, UnstableMode
 
@@ -455,6 +455,15 @@ def select_best_plateau_seed(
                             score = residual_norm * (1.0 + 10.0 * (1.0 - min(collapse_ratio_mass, collapse_ratio_rho)))
                         else:
                             score = residual_norm
+                    except NewtonConvergenceError as e:
+                        # Solution is not converging, exit all scans immediately
+                        if verbose:
+                            print(f"\n[seed-selection] Convergence error at candidate {idx+1}: {e}")
+                            print("[seed-selection] Exiting all scans - solution does not converge")
+                        raise RuntimeError(
+                            f"Seed selection aborted: solution does not converge. "
+                            f"Original error: {e}"
+                        ) from e
                     except Exception as e:
                         # If Newton step fails, still use residual norm but warn
                         if verbose:

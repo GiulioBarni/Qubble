@@ -18,7 +18,7 @@ import numpy as np
 from .ansatz import build_qball_escape_ansatz, AnsatzResult
 from .bounce2d import QBall2DSolver, QBall2DSettings
 from .grid import RadialTimeGrid, pack_fields, unpack_fields, phi_from_y, phi_from_ybar
-from .nr_solver import newton_solve
+from .nr_solver import newton_solve, NewtonConvergenceError
 from .observables2d import compute_charge
 from .potentials import LogisticPotentialParams
 from .profiles import QBallProfile, UnstableMode
@@ -302,6 +302,16 @@ def select_best_qball_escape_seed(
             
             if verbose:
                 print(f"  Top {idx+1}: ||F||={residual_norm_final:.6e}, rho0={rho0:.4f}, tau_var={tau_variation:.4f}, score={score:.6e}")
+        
+        except NewtonConvergenceError as e:
+            # Solution is not converging, exit all scans immediately
+            if verbose:
+                print(f"\n[seed-selection] Convergence error at candidate {idx+1}: {e}")
+                print("[seed-selection] Exiting all scans - solution does not converge")
+            raise RuntimeError(
+                f"Seed selection aborted: solution does not converge. "
+                f"Original error: {e}"
+            ) from e
         
         except Exception as e:
             result_entry = {

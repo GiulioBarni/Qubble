@@ -21,7 +21,7 @@ from .grid import (
     phi_from_ybar,
     unpack_fields,
 )
-from .nr_solver import NewtonResult, newton_solve
+from .nr_solver import NewtonResult, newton_solve, NewtonConvergenceError
 from .observables2d import compute_charge, compute_energy
 from .potentials import (
     LogisticPotentialParams,
@@ -532,17 +532,27 @@ def scan_eta_to_match_charge(
     quiet_settings = replace(settings, newton_verbose=False)
 
     x_last = x0_initial
-    charge_start, solution_start, x_last = solve_bounce_for_eta(
-        params,
-        omega,
-        profile,
-        mode,
-        grid,
-        settings,
-        eta_start,
-        x0_prev=x_last,
-        verbose=verbose,
-    )
+    try:
+        charge_start, solution_start, x_last = solve_bounce_for_eta(
+            params,
+            omega,
+            profile,
+            mode,
+            grid,
+            settings,
+            eta_start,
+            x0_prev=x_last,
+            verbose=verbose,
+        )
+    except NewtonConvergenceError as e:
+        # Solution is not converging at start, exit scan immediately
+        if verbose:
+            print(f"[eta-scan] Convergence error at initial eta = {eta_start:.6f}: {e}")
+            print("[eta-scan] Exiting scan - solution does not converge")
+        raise RuntimeError(
+            f"Eta scan aborted: solution does not converge at initial eta = {eta_start:.6f}. "
+            f"Original error: {e}"
+        ) from e
     history.append(EtaScanHistoryEntry(eta_start, charge_start))
 
     if verbose:
@@ -560,17 +570,28 @@ def scan_eta_to_match_charge(
 
     for step in range(1, max_scan_steps + 1):
         eta_try = eta_start + direction * d_eta * step
-        charge_try, solution_try, x_last = solve_bounce_for_eta(
-            params,
-            omega,
-            profile,
-            mode,
-            grid,
-            quiet_settings,
-            eta_try,
-            x0_prev=x_last,
-            verbose=False,
-        )
+        try:
+            charge_try, solution_try, x_last = solve_bounce_for_eta(
+                params,
+                omega,
+                profile,
+                mode,
+                grid,
+                quiet_settings,
+                eta_try,
+                x0_prev=x_last,
+                verbose=False,
+            )
+        except NewtonConvergenceError as e:
+            # Solution is not converging, exit scan immediately
+            if verbose:
+                print(f"[eta-scan] Convergence error at eta = {eta_try:.6f}: {e}")
+                print("[eta-scan] Exiting scan - solution does not converge")
+            raise RuntimeError(
+                f"Eta scan aborted: solution does not converge at eta = {eta_try:.6f}. "
+                f"Original error: {e}"
+            ) from e
+        
         history.append(EtaScanHistoryEntry(eta_try, charge_try))
 
         if verbose:
@@ -607,17 +628,28 @@ def scan_eta_to_match_charge(
             return charge_val - target_charge
         
         # Otherwise, compute it
-        charge_val, _, x_last = solve_bounce_for_eta(
-            params,
-            omega,
-            profile,
-            mode,
-            grid,
-            quiet_settings,
-            val,
-            x0_prev=x_last,
-            verbose=False,
-        )
+        try:
+            charge_val, _, x_last = solve_bounce_for_eta(
+                params,
+                omega,
+                profile,
+                mode,
+                grid,
+                quiet_settings,
+                val,
+                x0_prev=x_last,
+                verbose=False,
+            )
+        except NewtonConvergenceError as e:
+            # Solution is not converging, exit scan immediately
+            if verbose:
+                print(f"[eta-root] Convergence error at eta = {val:.6f}: {e}")
+                print("[eta-root] Exiting scan - solution does not converge")
+            raise RuntimeError(
+                f"Eta scan aborted: solution does not converge at eta = {val:.6f}. "
+                f"Original error: {e}"
+            ) from e
+        
         history.append(EtaScanHistoryEntry(val, charge_val))
         cached_values[val] = charge_val
         if verbose:
@@ -628,17 +660,27 @@ def scan_eta_to_match_charge(
         return charge_val - target_charge
 
     eta_star = brentq(f_eta, eta_low, eta_high, xtol=tol, rtol=tol)
-    charge_star, solution_star, x_last = solve_bounce_for_eta(
-        params,
-        omega,
-        profile,
-        mode,
-        grid,
-        quiet_settings,
-        eta_star,
-        x0_prev=x_last,
-        verbose=False,
-    )
+    try:
+        charge_star, solution_star, x_last = solve_bounce_for_eta(
+            params,
+            omega,
+            profile,
+            mode,
+            grid,
+            quiet_settings,
+            eta_star,
+            x0_prev=x_last,
+            verbose=False,
+        )
+    except NewtonConvergenceError as e:
+        # Solution is not converging, exit scan immediately
+        if verbose:
+            print(f"[eta-scan] Convergence error at final eta* = {eta_star:.6f}: {e}")
+            print("[eta-scan] Exiting scan - solution does not converge")
+        raise RuntimeError(
+            f"Eta scan aborted: solution does not converge at final eta* = {eta_star:.6f}. "
+            f"Original error: {e}"
+        ) from e
     # DO NOT overwrite solution_star.settings as it already has the correct eta0 from solve_bounce_for_eta
     history.append(EtaScanHistoryEntry(eta_star, charge_star))
 

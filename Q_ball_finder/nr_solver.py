@@ -14,6 +14,17 @@ from scipy.sparse.linalg import spsolve
 ArrayLike = np.ndarray | Sequence[float]
 
 
+class NewtonConvergenceError(RuntimeError):
+    """
+    Exception raised when Newton-Raphson iteration fails to converge.
+    
+    This is raised when the residual norm exceeds a threshold (typically 10^10),
+    indicating that the solution is diverging and further iterations are unlikely
+    to succeed.
+    """
+    pass
+
+
 @dataclass
 class NewtonResult:
     x: np.ndarray
@@ -56,11 +67,22 @@ def newton_solve(
 
     history: List[float] = []
     success = False
+    
+    # Threshold for divergence detection
+    DIVERGENCE_THRESHOLD = 1e10
 
     for it in range(1, max_iter + 1):
         F = residual(x)
         res_norm = norm(F)
         history.append(res_norm)
+        
+        # Check for divergence: if residual norm exceeds threshold, solution is not converging
+        if res_norm > DIVERGENCE_THRESHOLD:
+            raise NewtonConvergenceError(
+                f"Solution does not converge: residual norm ||F|| = {res_norm:.6e} "
+                f"exceeds threshold {DIVERGENCE_THRESHOLD:.0e} at iteration {it}"
+            )
+        
         if callback is not None:
             callback(it, x, F, res_norm)
         if res_norm < tol:
@@ -85,5 +107,5 @@ def newton_solve(
     )
 
 
-__all__ = ["NewtonResult", "newton_solve"]
+__all__ = ["NewtonResult", "newton_solve", "NewtonConvergenceError"]
 

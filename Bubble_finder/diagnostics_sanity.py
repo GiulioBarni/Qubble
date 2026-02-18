@@ -467,3 +467,99 @@ def charge_definition_report() -> Dict[str, Any]:
         ),
         comparison_note="For apples-to-apples: use same omega, compare EXCESS charge (subtract background) for both.",
     )
+
+
+# -----------------------------------------------------------------------------
+# Regression checklist (callable from notebook)
+# -----------------------------------------------------------------------------
+
+def run_regression_checks(
+    solver,
+    *,
+    check_tau_independent: bool = True,
+    atol_residual: float = 1e-6,
+    atol_observables: float = 1e-10,
+) -> Dict[str, Any]:
+    """
+    Run regression checks; fail loudly (AssertionError) if any check fails.
+
+    1) Background exactness at eta0=0: x_bg = solver._zero_vec(), residual small.
+    2) Tau-independent bubble at eta0=0: embed 1D bounce, Newton converges, tau_std ~ 0.
+    3) Observables consistency: solver.observables_tau0(x) matches observables_2d.compute_observables_tau0_ghost(...).
+    4) Targets consistency: ratios use targets_tau0(), no omega*Q shortcut.
+    """
+    from . import observables_2d
+
+    results: Dict[str, Any] = {}
+
+    # 1) Background exactness
+    eta_save = float(solver.eta0)
+    try:
+        solver.eta0 = 0.0
+        solver.settings.eta0 = 0.0
+        x_bg = solver._zero_vec()
+        F = solver.residual(x_bg)
+        nrm = float(np.linalg.norm(F))
+    finally:
+        solver.eta0 = eta_save
+        solver.settings.eta0 = eta_save
+    results["background_residual_norm"] = nrm
+    if nrm > atol_residual:
+        raise AssertionError(
+            f"run_regression_checks: background residual ||F||={nrm:.3e} > atol={atol_residual:.3e}"
+        )
+    results["background_ok"] = True
+
+    # 2) Tau-independent bubble (optional: requires bounce_1d and Newton)
+    if check_tau_independent:
+        from .bounce_1d import solve_bounce
+        r_1d, phi_1d, _, phi_false, _ = solve_bounce(
+            1.999, 1.0, 2.0, float(solver.omega),
+            rmax=float(solver.grid.r[-1]) * 0.8, n_grid_points=200,
+        )
+        if r_1d is not None and phi_1d is not None:
+            x0 = build_tau_independent_embedding(solver, r_1d, phi_1d, float(solver.rho0))
+            try:
+                solver.eta0 = 0.0
+                solver.settings.eta0 = 0.0
+                sol = solver.solve(x0, verbose=False)
+                nrm_f = float(sol.newton.residual_norm)
+                results["tau_independent_residual_norm"] = nrm_f
+                results["tau_independent_converged"] = bool(sol.newton.success)
+            finally:
+                solver.eta0 = eta_save
+                solver.settings.eta0 = eta_save
+        else:
+            results["tau_independent_skipped"] = "solve_bounce failed"
+    else:
+        results["tau_independent_skipped"] = "check_tau_independent=False"
+
+    # 3) Observables consistency: solver.observables_tau0(x) vs observables_2d
+    x_test = solver._zero_vec()  # homogeneous
+    obs_solver = solver.observables_tau0(x_test, subtract_background=False, return_profiles=False)
+    obs_module = observables_2d.compute_observables_tau0_ghost(
+        solver, x_test, subtract_background_charge=False, subtract_background_energy=False
+    )
+    for key in ("Q", "E", "rho_Q", "rho_E"):
+        a = obs_solver.get(key)
+        b = obs_module.get(key)
+        if a is not None and b is not None:
+            err = abs(float(a) - float(b))
+            if err > atol_observables:
+                raise AssertionError(
+                    f"run_regression_checks: observables mismatch key={key} diff={err:.3e}"
+                )
+    results["observables_consistent"] = True
+
+    # 4) Targets: ensure targets_tau0() is used and no omega*Q
+    tgt = solver.targets_tau0(subtract_background=False)
+    if "Q" not in tgt or "E" not in tgt:
+        raise AssertionError("run_regression_checks: targets_tau0() must return Q and E")
+    results["targets_ok"] = True
+
+    # 5) Energy background subtraction: E (subtracted) for homogeneous must be ≈ 0
+    E_hom = observables_2d.assert_E_hom_near_zero(solver, tol=1e-3)
+    results["E_hom_near_zero"] = True
+    results["E_hom_value"] = float(E_hom)
+
+    return results

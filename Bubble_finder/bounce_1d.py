@@ -10,9 +10,13 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from scipy.integrate import simpson
-
 from Bubble_finder.potential_bubble import vacua_of_Omega, dOmega_dphi, Omega_phi
+from Bubble_finder.observables_1d import (
+    compute_charge,
+    compute_energy,
+    compute_charge_density,
+    compute_energy_density,
+)
 
 
 def solve_bounce(
@@ -190,49 +194,7 @@ def solve_bounce(
     return r_grid, phi_grid, phi0_final, phi_false, phi_true
 
 
-def compute_energy(r, phi, phi0, v1, v2, omega, phi_false):
-    """
-    Compute energy for 1D O(3) bounce: E = 4π ∫ dr r² [ ½ (dφ/dr)² + Ω(φ) - Ω(φ_false) ].
-    Uses Simpson's rule for integration.
-    """
-    dphi_dr = np.gradient(phi, r, edge_order=2)
-    dphi_dr[0] = 0.0  # Regularity at origin
-    Omega_phi_vals = np.array([Omega_phi(phi_i, phi0, v1, v2, omega) for phi_i in phi])
-    Omega_false = Omega_phi(phi_false, phi0, v1, v2, omega)
-    integrand = 0.5 * dphi_dr**2 + (Omega_phi_vals - Omega_false)
-    return 4.0 * np.pi * simpson(r**2 * integrand, r)
-
-
-def compute_charge(r, phi, omega):
-    """
-    Compute charge for 1D O(3) bounce: Q = 4π ω ∫ dr r² φ².
-    Uses Simpson's rule for integration.
-    """
-    return 4.0 * np.pi * omega * simpson(r**2 * phi**2, r)
-
-
-def compute_energy_density(r, phi, phi0, v1, v2, omega, phi_false):
-    """
-    Energy density ρ_E = E / V for the bounce in a ball of radius r_max = r[-1],
-    with V = (4/3)π r_max³.
-    """
-    energy = compute_energy(r, phi, phi0, v1, v2, omega, phi_false)
-    r_max = r[-1]
-    volume = (4.0 / 3.0) * np.pi * r_max**3
-    return energy / volume
-
-
-def compute_charge_density(r, phi, omega):
-    """
-    Charge density ρ_Q = Q / V for the bounce in a ball of radius r_max = r[-1],
-    with V = (4/3)π r_max³.
-    """
-    charge = compute_charge(r, phi, omega)
-    r_max = r[-1]
-    volume = (4.0 / 3.0) * np.pi * r_max**3
-    return charge / volume
-
-
+# Re-export 1D observables from central module (bounce_1d remains the notebook entry point)
 __all__ = [
     "solve_bounce",
     "compute_energy",

@@ -104,8 +104,12 @@ def compute_energy(
     return_profile: bool = False,
 ):
     """
-    Energy from Eq. (2.4) evaluated on a tau slice:
-      E(τ_i) = 4π ∫ dr r^2 [ (∂t φ)(∂t φ̄) + (∂r φ)(∂r φ̄) + V(φ φ̄) ].
+    Energy from Eq. (2.4) evaluated on a tau slice. Density (same convention as paper):
+      dens = -(∂τ φ)(∂τ φ̄) + (∂r φ)(∂r φ̄) + V(φ φ̄)
+      E(τ_i) = 4π ∫ dr r^2 dens.
+
+    The MINUS sign in front of the time-derivative product is the correct convention;
+    2D observables must match this exactly (not a bug).
 
     Implementation uses the same tau ghost rules (Eq. 4.2) to compute tau-derivatives.
     Potential is shifted so V(0)=0, consistent with the legacy energy code.

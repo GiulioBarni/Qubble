@@ -226,7 +226,8 @@ class AnsatzParams:
     k: int = 1                # tau harmonic
     phase: float = 0.0        # tau phase
     amp: float = 1.0          # overall amplitude of the base (usually 1.0 if y1d already “correct”)
-    tau_gate_frac: float = 0.15
+    tau_gate_frac: float = 0.15   # width of gate (fraction of T); gate ~1 in a band around tau_gate_center_frac
+    tau_gate_center_frac: float = 0.5   # gate center: 0 = τ_min (-β/2), 1 = τ_max (0), 0.5 = middle
     r_window_frac: float = 0.15
 
 
@@ -235,13 +236,21 @@ def smoothstep(x: np.ndarray) -> np.ndarray:
     return 3.0*x*x - 2.0*x*x*x
 
 
-def tau_gate(tau: np.ndarray, T: float, frac: float) -> np.ndarray:
-    # gate=0 at endpoints, ~1 in the middle
-    dist = np.minimum(tau + 0.5*T, 0.5*T - tau)
-    w = frac*T
+def tau_gate(
+    tau: np.ndarray, T: float, frac: float, center_frac: float = 0.5
+) -> np.ndarray:
+    """
+    Gate in τ: ~1 in a band around tau_center, smooth falloff elsewhere.
+    center_frac: 0 = τ_min (-T), 1 = τ_max (0), 0.5 = middle (-T/2).
+    frac: width of the band as fraction of T (half-width of plateau ~ frac*T).
+    """
+    tau_center = -T + center_frac * T
+    dist = np.abs(tau - tau_center)
+    w = frac * T
     g = np.ones_like(tau, float)
     mask = dist < w
-    g[mask] = smoothstep(dist[mask] / w)
+    g[mask] = 1.0 - smoothstep(dist[mask] / w)
+    g[~mask] = 0.0
     return g
 
 
@@ -659,8 +668,10 @@ def build_seed_bubble(
     y1d_loc = r * (phi1d - rho_tilde)
     ybar1d_loc = r * (phibar1d - rho_tilde)
 
-    # Bubble gate: off near τ=-β/2, on near τ=0 (half-box). Keep your existing gate knob.
-    g_tau = tau_gate(tau, T, params.tau_gate_frac)  # shape (Nt,)
+    # Bubble gate: centered at tau_gate_center_frac (0=τ_min, 1=τ_max, 0.5=middle); width tau_gate_frac.
+    g_tau = tau_gate(
+        tau, T, params.tau_gate_frac, center_frac=params.tau_gate_center_frac
+    )  # shape (Nt,)
 
     # Base = background ramp + gated localized bubble
     Y0 = y_bg + params.amp * np.outer(g_tau, y1d_loc)
@@ -1277,6 +1288,60 @@ def select_best_seed(
     if best is None or best_x is None:
         raise RuntimeError("Seed scan produced no candidates (empty grids?)")
     return best_x, best
+
+
+def build_seed(
+    solver: Bubble2DSolver,
+    kind: str,
+    **params: Any,
+) -> np.ndarray:
+    """
+    Single entrypoint for seed construction (twisted BC only).
+
+    kind:
+      - "anchored": uses solver.build_anchored_initial_guess(rho_center, Rb, Lw, tau_scale=...).
+      - "twisted_static": uses build_twisted_seed_from_static(solver, r_1d, phi_1d, rho0, ...).
+      - "bubble": uses build_seed_bubble(...); requires omega_ref, omega_tilde, params (AnsatzParams),
+        bubble_profile_1d; builds grid/fields/potential from solver via make_q_ball_objects.
+
+    Returns x0 (packed initial state).
+    """
+    kind = kind.strip().lower()
+    if kind == "anchored":
+        rho_center = params.get("rho_center", params.get("rho_centre", solver.rho0 * 1.2))
+        Rb = params.get("Rb", 3.0)
+        Lw = params.get("Lw", 1.0)
+        tau_scale = params.get("tau_scale")
+        return solver.build_anchored_initial_guess(rho_center, Rb, Lw, tau_scale=tau_scale)
+    if kind == "twisted_static":
+        r_1d = params["r_1d"]
+        phi_1d = params["phi_1d"]
+        rho0 = params.get("rho0", float(solver.rho0))
+        return build_twisted_seed_from_static(
+            solver=solver,
+            r_1d=r_1d,
+            phi_1d=phi_1d,
+            rho0=rho0,
+            g_tau=params.get("g_tau"),
+            a=params.get("a", 0.0),
+            seed_tau_bump=params.get("seed_tau_bump"),
+        )
+    if kind == "bubble":
+        grid, fields, potential, _, _ = make_q_ball_objects(solver)
+        return build_seed_bubble(
+            grid=grid,
+            fields=fields,
+            potential=potential,
+            omega_ref=params["omega_ref"],
+            omega_tilde=params["omega_tilde"],
+            bubble_profile_1d=params["bubble_profile_1d"],
+            params=params["params"],
+            sign_convention=params.get("sign_convention", 1),
+            cache=params.get("cache"),
+            neg_mode_override=params.get("neg_mode_override"),
+            rho_tilde_override=params.get("rho_tilde_override"),
+        )[0]
+    raise ValueError(f"build_seed: unknown kind={kind!r}. Use 'anchored', 'twisted_static', or 'bubble'.")
 
 
 @dataclass

@@ -69,6 +69,33 @@ from scipy.optimize import brentq
 
 from . import observables_2d
 
+
+def _format_obs_line(obs: Dict[str, Any], tgt: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Single helper for observables logging: one line with Q, E, rho_Q, rho_E and ratios vs target.
+    Used in Newton callback, scans, and final summaries. All values from tau=0 ghost.
+    """
+    Q, E = obs.get("Q", 0.0), obs.get("E", 0.0)
+    rho_Q = obs.get("rho_Q", 0.0)
+    rho_E = obs.get("rho_E", 0.0)
+    tQ = tgt.get("Q") if tgt else None
+    tE = tgt.get("E") if tgt else None
+    rho_Q_t = tgt.get("rho_Q") if tgt else None
+    rho_E_t = tgt.get("rho_E") if tgt else None
+    ratio_Q = (Q / tQ) if (tQ is not None and abs(tQ) > 1e-30) else float("nan")
+    ratio_E = (E / tE) if (tE is not None and abs(tE) > 1e-30) else float("nan")
+    ratio_rho_Q = (rho_Q / rho_Q_t) if (rho_Q_t is not None and abs(rho_Q_t) > 1e-30) else float("nan")
+    ratio_rho_E = (rho_E / rho_E_t) if (rho_E_t is not None and abs(rho_E_t) > 1e-30) else float("nan")
+    return (
+        f"charge={Q:.6e}, energy={E:.6e}, rhoQ={rho_Q:.6e}, rhoE={rho_E:.6e}, "
+        f"ratioQ={ratio_Q:.4f}, ratioE={ratio_E:.4f}"
+    )
+
+
+# Public alias for notebook and diagnostics
+format_obs_line = _format_obs_line
+
+
 # -----------------------------------------------------------------------------
 # Optional reuse of Q-ball/Q_ball_finder infrastructure (grid + pack/unpack + Newton)
 # -----------------------------------------------------------------------------
@@ -320,6 +347,8 @@ class Bubble2DSolution:
     E_tau0: float
     sanity: Dict[str, Any]
     iteration_history: Optional[List[Dict[str, Any]]] = None  # if solve(..., store_iteration_history=True)
+    # τ=0 ghost observables for plotting (set when Newton converges)
+    observables_ghost: Optional[Dict[str, Any]] = None  # Q, E, r, q_r, e_r, q_max, e_max, ...
 
     @property
     def success(self) -> bool:
@@ -1149,7 +1178,7 @@ class Bubble2DSolver:
         *,
         return_profile: bool = False,
     ) -> float | tuple[float, np.ndarray]:
-        """Charge Q on a tau slice; implementazione in observables_2d.compute_charge_2d."""
+        """Charge Q on a tau slice; implemented in observables_2d.compute_charge_2d."""
         return observables_2d.compute_charge_2d(
             self, y, ybar, index_tau=index_tau, return_profile=return_profile
         )
@@ -1163,7 +1192,7 @@ class Bubble2DSolver:
         return_profile: bool = False,
         subtract_background: bool = True,
     ) -> float | tuple[float, np.ndarray]:
-        """Energy on a tau slice; implementazione in observables_2d.compute_energy_2d."""
+        """Energy on a tau slice; implemented in observables_2d.compute_energy_2d."""
         return observables_2d.compute_energy_2d(
             self, y, ybar,
             index_tau=index_tau,
@@ -1177,15 +1206,61 @@ class Bubble2DSolver:
         ybar: np.ndarray,
         *,
         subtract_background: bool = True,
-    ) -> float:
-        """Charge at τ=0 by ghost reconstruction; implementazione in observables_2d.compute_charge_tau0_ghost_2d."""
+        return_profile: bool = False,
+    ):
+        """Charge at τ=0 by ghost reconstruction; returns Q or (Q, q_r) if return_profile."""
         return observables_2d.compute_charge_tau0_ghost_2d(
-            self, y, ybar, subtract_background=subtract_background
+            self, y, ybar,
+            subtract_background=subtract_background,
+            return_profile=return_profile,
         )
 
-    def compute_energy_tau0_ghost(self, y: np.ndarray, ybar: np.ndarray) -> float:
-        """Energy E(τ=0) by ghost reconstruction; implementazione in observables_2d.compute_energy_tau0_ghost_2d."""
-        return observables_2d.compute_energy_tau0_ghost_2d(self, y, ybar)
+    def compute_energy_tau0_ghost(
+        self,
+        y: np.ndarray,
+        ybar: np.ndarray,
+        *,
+        subtract_background: bool = True,
+        return_profile: bool = False,
+    ):
+        """Energy E(τ=0) by ghost reconstruction; returns E or (E, e_r) if return_profile."""
+        return observables_2d.compute_energy_tau0_ghost_2d(
+            self, y, ybar,
+            subtract_background=subtract_background,
+            return_profile=return_profile,
+        )
+
+    def observables_tau0(
+        self,
+        x: np.ndarray,
+        *,
+        subtract_background: bool = False,
+        return_profiles: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Ground-truth observables at τ=0 (ghost reconstruction). Single source of truth for Q, E, densities.
+        Returns dict with: Q, E, r, q_r, e_r, q_max, e_max, r_at_q_max, r_at_e_max, V, rho_Q, rho_E.
+        """
+        out = observables_2d.compute_observables_tau0_ghost(
+            self,
+            x,
+            subtract_background_charge=subtract_background,
+            subtract_background_energy=subtract_background,
+        )
+        if not return_profiles:
+            out = {k: v for k, v in out.items() if k not in ("r", "q_r", "e_r")}
+        return out
+
+    def targets_tau0(self, *, subtract_background: bool = False) -> Dict[str, Any]:
+        """
+        Target Q, E and densities from homogeneous background using the same τ=0 ghost definition.
+        Use for ratios; do not use E_target = omega*Q.
+        """
+        return observables_2d.compute_targets_tau0_ghost(
+            self,
+            subtract_background_charge=subtract_background,
+            subtract_background_energy=subtract_background,
+        )
 
     # -------------------------------------------------------------------------
     # Sanity checks (updated)
@@ -1267,6 +1342,80 @@ class Bubble2DSolver:
         d0 = self.sanity_background_eta0_zero()
         d1 = self.sanity_twist_source()
         return dict(background_eta0_zero=d0, twist_source=d1)
+
+    def self_check_tau_independent_reduction(
+        self,
+        r_min_skip: int = 2,
+        r_max_skip: int = 2,
+        atol: float = 1e-6,
+        rtol: float = 1e-2,
+    ) -> Dict[str, Any]:
+        """
+        Check that the 2D bulk operator reduces to the 1D bounce ODE for a tau-independent
+        real profile at eta0=0. Builds phi(r) = rho0 + small bump, embeds as y = r*(phi - rho0),
+        compares 2D residual Fy with 1D operator (r*phi'' + 2*phi' + 2*r*phi*(omega^2 - W)).
+        Excludes r~0 and r~r_max where 2D uses different BC stencils.
+        Fails loudly (raises AssertionError) if mismatch exceeds tolerance.
+        """
+        r = np.asarray(self.grid.r, dtype=float).flatten()
+        if r.size < 4 or r.size != self.Nr:
+            return dict(ok=False, reason="grid too small")
+        # Tau-independent real profile: small bump so W is well-defined
+        phi = self.rho0 + 0.1 * np.exp(-((r - 0.5 * r[-1]) ** 2) / 4.0)
+        phi = np.asarray(phi, dtype=float)
+        # Finite differences for phi', phi'' (centered in interior)
+        phi_p = np.gradient(phi, r, edge_order=2)
+        phi_p[0] = 0.0  # regularity
+        phi_pp = np.gradient(phi_p, r, edge_order=2)
+        y_slice = r * (phi - self.rho0)
+        y = np.broadcast_to(y_slice[:, None], (self.Nr, self.Nt)).copy()
+        ybar = y.copy()
+        eta_save = float(self.eta0)
+        try:
+            self.eta0 = 0.0
+            self.settings.eta0 = 0.0
+            x = self.pack(y, ybar)
+            F = self.residual(x)
+            Fy, Fyb = self.unpack(F)
+        finally:
+            self.eta0 = eta_save
+            self.settings.eta0 = eta_save
+        W, _, _, _ = self._W_Wp(phi * phi)
+        W = np.asarray(W).flatten()
+        # 1D operator: L1d = r*phi'' + 2*phi' + 2*r*phi*(omega^2 - W)
+        L1d = r * phi_pp + 2.0 * phi_p + 2.0 * r * phi * (self.omega**2 - W)
+        Fy_slice = np.asarray(Fy.real[:, 0]).flatten()
+        # Exclude boundaries (2D uses regularity/Neumann stencils there)
+        j_lo = min(r_min_skip, r.size - 1)
+        j_hi = max(r.size - r_max_skip, j_lo + 1)
+        diff = np.abs(Fy_slice[j_lo:j_hi] - L1d[j_lo:j_hi])
+        denom = np.abs(L1d[j_lo:j_hi]) + atol
+        rel = np.where(denom > 1e-30, diff / denom, diff)
+        max_abs = float(np.max(diff))
+        max_rel = float(np.max(rel))
+        ok = max_abs < atol or max_rel < rtol
+        return dict(
+            ok=ok,
+            max_abs_err=max_abs,
+            max_rel_err=max_rel,
+            atol=atol,
+            rtol=rtol,
+        )
+
+    def potential_convention_report(self) -> str:
+        """
+        Short English summary of potential and 2D conventions (no physics change).
+        u = Re(phi_rot*phibar_rot), rho = sqrt(u_pos + rho_eps), W = dU/(2*rho),
+        bulk coefficient A_coef = 2*(omega^2 - W) for 1D/2D match.
+        """
+        lines = [
+            "Potential / 2D convention (source of truth):",
+            "  u = Re(phi_rot * phibar_rot),  rho = sqrt(smooth_pos(u) + rho_eps)",
+            "  W(rho) = dU(rho) / (2*rho)",
+            "  Bulk: A_coef = 2*(omega^2 - W)  [factor 2 for tau-indep -> 1D bounce ODE]",
+            "  Charge: q = (1/2)*Re(phibar*phi_tau - phi*phibar_tau),  Q = 4pi int r^2 q dr",
+        ]
+        return "\n".join(lines)
 
     # -------------------------------------------------------------------------
     # Compatibility wrappers (notebook / legacy): same API, delegate to new checks
@@ -1364,7 +1513,13 @@ class Bubble2DSolver:
     # -------------------------------------------------------------------------
     # Newton solve
     # -------------------------------------------------------------------------
-    def solve(self, x0: np.ndarray, verbose: Optional[bool] = None, store_iteration_history: bool = False) -> Bubble2DSolution:
+    def solve(
+        self,
+        x0: np.ndarray,
+        verbose: Optional[bool] = None,
+        store_iteration_history: bool = False,
+        verbose_success_block: bool = True,
+    ) -> Bubble2DSolution:
         do_verbose = bool(verbose) if verbose is not None else bool(self.settings.verbose)
 
         x0 = np.asarray(x0)
@@ -1389,6 +1544,17 @@ class Bubble2DSolver:
             rho0_it = np.sqrt(np.maximum(u0 + float(self.settings.rho_eps), 0.0))
             iteration_history.append({"iter": 0, "res_norm": float(np.nan), "rho": rho0_it.copy()})
 
+        # Targets once per solve: Q total (no charge sub), E relative to hom (energy sub so E_target ≈ 0)
+        _targets_cache: Dict[str, Any] = {}
+        try:
+            _targets_cache = observables_2d.compute_targets_tau0_ghost(
+                self,
+                subtract_background_charge=False,
+                subtract_background_energy=True,
+            )
+        except Exception:
+            pass
+
         def line_search(x: np.ndarray, dx: np.ndarray, F: np.ndarray) -> float:
             n0 = float(np.linalg.norm(F))
             alpha = 1.0
@@ -1411,24 +1577,17 @@ class Bubble2DSolver:
                 iteration_history.append({"iter": it, "res_norm": float(nF), "rho": rho_it.copy()})
             if not do_verbose:
                 return
-            Fy, Fyb = self.unpack(F)
-            F_abs = np.abs(Fy) + np.abs(Fyb)
-            jmax, imax = np.unravel_index(int(np.argmax(F_abs)), F_abs.shape)
-            rmax = float(self.grid.r[jmax])
-            taumax = float(self.grid.tau[imax])
-            Fmax = float(F_abs[jmax, imax])
-
             extra = ""
             try:
-                y, ybar = self.unpack(x)
-                Q0_slice = float(self.compute_charge(y, ybar, 0))
-                E_tau0 = self.compute_energy_tau0_ghost(y, ybar)
-                extra = f", Q(τ[0])={Q0_slice:+.6e}, E(τ=0)={E_tau0:.6e}"
+                obs = observables_2d.compute_observables_tau0_ghost(
+                    self, x,
+                    subtract_background_charge=False,
+                    subtract_background_energy=True,
+                )
+                extra = ", " + _format_obs_line(obs, _targets_cache)
             except Exception:
                 pass
-
-            print(f"[Newton-bubble] iter={it:02d}, ||F||={nF:.3e}{extra}")
-            print(f"  max|F|={Fmax:.3e} at (r={rmax:.3f}, tau={taumax:.3f})")
+            print(f"[Newton-explicit] iter={it:02d}, ||F||={nF:.3e}{extra}")
 
         nr = newton_solve(
             residual=self.residual,
@@ -1443,25 +1602,44 @@ class Bubble2DSolver:
         )
 
         y, ybar = self.unpack(nr.x)
-        Q0_slice = float(self.compute_charge(y, ybar, 0))
-        E0_slice = self.compute_energy(y, ybar, 0)
-        E0_ghost = self.compute_energy_tau0_ghost(y, ybar)
         sanity = self.run_sanity_tests()
 
-        if nr.success:
+        # Ground truth: τ=0 ghost Q (total) and E (relative to hom, so E_target ≈ 0)
+        obs_ghost = observables_2d.compute_observables_tau0_ghost(
+            self, nr.x,
+            subtract_background_charge=False,
+            subtract_background_energy=True,
+        )
+        Q_ghost = obs_ghost["Q"]
+        E_ghost = obs_ghost["E"]
+        tgt = _targets_cache or observables_2d.compute_targets_tau0_ghost(
+            self,
+            subtract_background_charge=False,
+            subtract_background_energy=True,
+        )
+        obs_ghost["q_target_r"] = tgt.get("q_r")
+        obs_ghost["e_target_r"] = tgt.get("e_r")
+        obs_ghost["Q_target"] = tgt.get("Q")
+        obs_ghost["E_target"] = tgt.get("E")
+
+        if nr.success and verbose_success_block:
+            tQ, tE = tgt.get("Q"), tgt.get("E")
+            rQ = (Q_ghost / tQ) if (tQ is not None and abs(tQ) > 1e-30) else float("nan")
+            rE = (E_ghost / tE) if (tE is not None and abs(tE) > 1e-30) else float("nan")
+            rho_Q_t, rho_E_t = tgt.get("rho_Q"), tgt.get("rho_E")
+            r_rhoQ = (obs_ghost["rho_Q"] / rho_Q_t) if (rho_Q_t is not None and abs(rho_Q_t) > 1e-30) else float("nan")
+            r_rhoE = (obs_ghost["rho_E"] / rho_E_t) if (rho_E_t is not None and abs(rho_E_t) > 1e-30) else float("nan")
             print("")
-            print("=" * 70)
-            print("Newton converged — diagnostica risultati")
-            print("=" * 70)
-            print(f"  Convergenza: success, iterazioni = {nr.iterations}")
-            print(f"  Residuo finale ||F|| = {nr.residual_norm:.6e}")
-            print(f"  Carica Q(τ[0])      = {Q0_slice:+.6e}  (primo slice, tau=-Δτ/2)")
-            print(f"  Energia E(τ=0) slice = {E0_slice:.6e}  (su griglia τ[0])")
-            print(f"  Energia E(τ=0) ghost = {E0_ghost:.6e}  (ricostruita a τ=0 come Q-ball)")
+            print("--- Diagnostics (τ=0 ghost) ---")
+            print(f"  Q = {Q_ghost:.6e}  (target: {tQ}, ratio: {rQ:.4f})")
+            print(f"  E = {E_ghost:.6e}  (target: {tE}, ratio: {rE:.4f})")
+            print(f"  rho_Q = {obs_ghost['rho_Q']:.6e}  (target: {rho_Q_t}, ratio: {r_rhoQ:.4f})")
+            print(f"  rho_E = {obs_ghost['rho_E']:.6e}  (target: {rho_E_t}, ratio: {r_rhoE:.4f})")
+            print(f"  q_max = {obs_ghost['q_max']:.3e}  at r = {obs_ghost['r_at_q_max']:.4f}")
+            print(f"  e_max = {obs_ghost['e_max']:.3e}  at r = {obs_ghost['r_at_e_max']:.4f}")
             d0 = sanity.get("background_eta0_zero", {})
             if d0:
                 print(f"  Sanity (η0=0): ||F||={d0.get('residual_norm', '—'):.3e}, ω²−W(ρ0)={d0.get('omega2_minus_W', '—'):.3e}")
-            print("=" * 70)
             print("")
 
         return Bubble2DSolution(
@@ -1471,24 +1649,44 @@ class Bubble2DSolver:
             y=y,
             ybar=ybar,
             rho0=self.rho0,
-            Q_tau0=complex(Q0_slice, 0.0),
-            E_tau0=float(E0_ghost),
+            Q_tau0=complex(Q_ghost, 0.0),
+            E_tau0=float(E_ghost),
             sanity=sanity,
             iteration_history=iteration_history if store_iteration_history else None,
+            observables_ghost=obs_ghost,
         )
 
     # -------------------------------------------------------------------------
     # external eta0 scan to match Q (bisection with warm-start)
     # -------------------------------------------------------------------------
-    def scan_eta0_to_match_Q(self, Q_target: float, eta_bracket: Tuple[float, float], x0: np.ndarray, max_steps: int = 30):
+    def scan_eta0_to_match_Q(
+        self,
+        Q_target: float,
+        eta_bracket: Tuple[float, float],
+        x0: np.ndarray,
+        max_steps: int = 30,
+        verbose: bool = False,
+        tol_Q: float = 1e-10,
+    ):
         hist: List[Dict[str, Any]] = []
+        targets_scan: Dict[str, Any] = {}
+        try:
+            targets_scan = self.targets_tau0(subtract_background=False)
+        except Exception:
+            targets_scan = {}
+        tQ = targets_scan.get("Q")
+        tE = targets_scan.get("E")
 
         def solve_eta(eta: float, seed: np.ndarray):
             self.settings.eta0 = float(eta)
             self.eta0 = float(eta)
-            sol = self.solve(seed, verbose=False)
+            sol = self.solve(seed, verbose=False, verbose_success_block=False)
             q = float(sol.Q_tau0.real)
-            hist.append(dict(eta0=float(eta), Q=q, residual=float(sol.newton.residual_norm)))
+            e = float(sol.E_tau0)
+            hist.append(dict(eta0=float(eta), Q=q, E=e, residual=float(sol.newton.residual_norm)))
+            if verbose:
+                obs = self.observables_tau0(sol.newton.x, subtract_background=False, return_profiles=False)
+                print(f"[eta-scan] eta={eta:.6f}, " + _format_obs_line(obs, targets_scan))
             return q - float(Q_target), sol
 
         a, b = map(float, eta_bracket)
@@ -1512,7 +1710,7 @@ class Bubble2DSolver:
             fm, solm = solve_eta(mid, seed)
             seed = solm.newton.x
             best_sol = solm
-            if abs(fm) < 1e-10 * max(1.0, abs(Q_target)):
+            if abs(fm) < tol_Q * max(1.0, abs(Q_target)):
                 return solm, dict(history=hist, eta0=float(mid))
             if flo * fm <= 0.0:
                 hi, fhi = mid, fm
@@ -1585,7 +1783,7 @@ if __name__ == "__main__":
     sol = solver.solve(x0)
 
     print("Converged:", sol.newton.success, "||F||=", sol.newton.residual_norm)
-    print("Q(tau0)=", sol.Q_tau0.real, "E(tau0)=", sol.E_tau0)
+    print(f"Q(τ=0 ghost)={sol.Q_tau0.real:.6e}, E(τ=0 ghost)={sol.E_tau0:.6e}")
 
     # Jacobian FD check at the converged (or last) point
     try:

@@ -1,9 +1,8 @@
 """
-observables_2d.py — Charge and energy for 1D and 2D bubble.
+observables_2d.py — 2D charge and energy (τ=0 ghost reconstruction).
 
-Purpose:
-- 1D: centralised re-export from bounce_1d + helpers (homogeneous Q, volume-corrected).
-- 2D: charge/energy on τ slices with the same conventions as 1D.
+Purpose: 2D observables on the solver grid with twisted BC and ghost reconstruction at τ=0.
+1D helpers (Q_homogeneous_ball, compute_charge_1d, etc.) live in observables_1d.py.
 
 CHARGE CONVENTION (IMPORTANT)
 -----------------------------
@@ -11,11 +10,7 @@ We use
     q(τ,r) = 1/2 * Re( phibar * ∂τ phi  -  phi * ∂τ phibar )
     Q(τ)   = 4π ∫_0^{rmax} dr r^2 q(τ,r)
 
-This choice is consistent with the 1D helpers:
-    Q_hom = 4π ω ρ0^2 (rmax^3/3)
-
-If you see a factor-of-2 mismatch somewhere in the 2D solver, the first thing
-to check is whether that 1/2 is missing or duplicated.
+This choice is consistent with observables_1d: Q_hom = 4π ω ρ0^2 (rmax^3/3).
 """
 
 from __future__ import annotations
@@ -25,35 +20,25 @@ from typing import Any, Tuple, Union
 import numpy as np
 from scipy.integrate import simpson
 
-# -----------------------------------------------------------------------------
-# 1D observables (re-export from bounce_1d for centralised API)
-# -----------------------------------------------------------------------------
-
-from .bounce_1d import (
-    compute_charge as compute_charge_1d,
-    compute_charge_density as compute_charge_density_1d,
-    compute_energy as compute_energy_1d,
-    compute_energy_density as compute_energy_density_1d,
+from .observables_1d import (
+    Q_homogeneous_ball,
+    compute_charge,
+    compute_charge_1d_volume_corrected,
+    compute_charge_density,
+    compute_energy,
+    compute_energy_density,
 )
 
-# Notebook compatibility (1D bounce)
-compute_energy = compute_energy_1d
-compute_charge = compute_charge_1d
-compute_energy_density = compute_energy_density_1d
-compute_charge_density = compute_charge_density_1d
+# Aliases for notebook compatibility
+compute_charge_1d = compute_charge
+compute_energy_1d = compute_energy
+compute_charge_density_1d = compute_charge_density
+compute_energy_density_1d = compute_energy_density
 
 
 # -----------------------------------------------------------------------------
-# 1D helpers
+# 2D-from-1D bridge (uses 2D r grid; homogeneous target from observables_1d)
 # -----------------------------------------------------------------------------
-
-def Q_homogeneous_ball(omega: float, phi_false: float, r_max: float) -> float:
-    """
-    Charge of the homogeneous configuration φ = φ_false in the ball [0, r_max]:
-        Q_hom = 4π ω φ_false² (r_max³/3).
-    """
-    return float(4.0 * np.pi * omega * (phi_false**2) * (r_max**3 / 3.0))
-
 
 def compute_charge_like_2d_from_1d(
     r_1d: np.ndarray,
@@ -90,57 +75,6 @@ def compute_charge_like_2d_from_1d(
         r_max = float(r_2d[-1])
         Q -= Q_homogeneous_ball(omega=omega, phi_false=rho0, r_max=r_max)
     return Q
-
-
-def compute_charge_1d_volume_corrected(
-    r: np.ndarray,
-    phi: np.ndarray,
-    omega: float,
-    r_max_ref: float,
-    phi_false_tail: float,
-) -> float:
-    """
-    1D charge on the same volume [0, r_max_ref]: integrate the bounce from 0 to r_max_bubble,
-    then extend with φ = phi_false_tail from r_max_bubble to r_max_ref.
-
-    Convention consistent with Q_homogeneous_ball:
-        Q = 4π ω ∫ r² φ² dr.
-    """
-    r = np.asarray(r, dtype=float)
-    phi = np.asarray(phi, dtype=float)
-    if r.ndim != 1 or phi.shape != r.shape:
-        raise ValueError("compute_charge_1d_volume_corrected: r and phi must be 1D arrays with same shape.")
-    if len(r) < 2:
-        return 0.0
-
-    r_max_bubble = float(r[-1])
-
-    # Bubble part
-    Q_bubble_part = float(simpson(r**2 * phi**2, x=r))
-
-    if r_max_bubble >= r_max_ref:
-        # Truncate/interpolate up to r_max_ref
-        mask = r <= r_max_ref
-        r_trunc = r[mask]
-        phi_trunc = phi[mask]
-        if len(r_trunc) == 0:
-            # All beyond r_max_ref: interpolate a single point
-            phi_at_rmax = float(np.interp(r_max_ref, r, phi))
-            Q_bubble_part = float(simpson(np.array([0.0, r_max_ref])**2 * np.array([phi_trunc[0], phi_at_rmax])**2,
-                                          x=np.array([0.0, r_max_ref])))
-        else:
-            if r_trunc[-1] < r_max_ref - 1e-12:
-                r_ext = np.append(r_trunc, r_max_ref)
-                phi_ext = np.append(phi_trunc, np.interp(r_max_ref, r, phi))
-                Q_bubble_part = float(simpson(r_ext**2 * phi_ext**2, x=r_ext))
-            else:
-                Q_bubble_part = float(simpson(r_trunc**2 * phi_trunc**2, x=r_trunc))
-        Q_tail = 0.0
-    else:
-        # Add homogeneous tail up to r_max_ref
-        Q_tail = (phi_false_tail**2) * (r_max_ref**3 - r_max_bubble**3) / 3.0
-
-    return float(4.0 * np.pi * omega * (Q_bubble_part + Q_tail))
 
 
 # -----------------------------------------------------------------------------
@@ -192,6 +126,29 @@ def _tau_derivative_centered(
     if len(tau) >= 2 and (tau[1] > tau[0]):
         return (y_ip1 - y_im1) / (2.0 * dt)
     return (y_im1 - y_ip1) / (2.0 * dt)
+
+
+# -----------------------------------------------------------------------------
+# 2D energy: homogeneous background density (for clean subtraction)
+# -----------------------------------------------------------------------------
+
+def _homogeneous_energy_density_2d(
+    solver: Any,
+    r: np.ndarray,
+    omega: float,
+    rho0_bg: float,
+) -> np.ndarray:
+    """
+    Energy density of the homogeneous reference state (phi = phibar = rho0_bg constant)
+    with the SAME convention as the field density:
+      dens = -(phi_tau*phibar_tau) + (phi_r*phibar_r) + V.
+    For homogeneous: phi_r = phibar_r = 0; phi_tau*phibar_tau = -omega^2*rho0_bg^2
+    => dens_bg = +omega^2*rho0_bg^2 + V(rho0_bg).
+    Returns array of shape r for pointwise subtraction.
+    """
+    r = np.asarray(r, dtype=float)
+    V_bg = solver.U(np.full_like(r, rho0_bg, dtype=float))
+    return (omega**2 * rho0_bg**2) + V_bg
 
 
 # -----------------------------------------------------------------------------
@@ -284,11 +241,13 @@ def compute_energy_2d(
     subtract_background: bool = True,
 ) -> Union[float, Tuple[float, np.ndarray]]:
     """
-    Energy E on a τ slice:
+    Energy E on a τ slice. Density (must match Q-ball convention exactly):
         dens = -(phi_tau*phibar_tau) + (phi_r*phibar_r) + V
+    The MINUS sign in front of the time-derivative product is correct (not a bug).
 
-    For V we use ρ reconstructed from the "rotated" fields (without exp(±ωτ)), as in the solver.
-    subtract_background: subtracts only U(ρ0).
+    subtract_background: if True, subtract the homogeneous reference density pointwise:
+        dens_sub = dens_field - dens_bg, with dens_bg = omega^2*rho0^2 + V(rho0).
+    This yields E ≈ 0 for the homogeneous configuration (no ad-hoc patches).
     """
     y = np.asarray(y)
     ybar = np.asarray(ybar)
@@ -350,12 +309,12 @@ def compute_energy_2d(
             u_pos = np.maximum(u, 0.0)
 
         rho = np.sqrt(u_pos + rho_eps)
-        V = solver.U(rho)
+        V_full = solver.U(rho)
+        dens_field = -(phi_tau * phibar_tau) + (phi_r * phibar_r) + V_full
         if subtract_background:
-            V = V - solver.U(np.full_like(rho, rho_bg))
-
-        dens = -(phi_tau * phibar_tau) + (phi_r * phibar_r) + V
-        E_tau[i] = float(4.0 * np.pi * simpson(r**2 * dens.real, x=r))
+            dens_bg = _homogeneous_energy_density_2d(solver, r, omega, rho_bg)
+            dens_field = dens_field - dens_bg
+        E_tau[i] = float(4.0 * np.pi * simpson(r**2 * dens_field.real, x=r))
 
     i0 = index_tau if index_tau >= 0 else Nt + index_tau
     E0 = float(E_tau[i0])
@@ -368,7 +327,8 @@ def compute_charge_tau0_ghost_2d(
     ybar: np.ndarray,
     *,
     subtract_background: bool = True,
-) -> float:
+    return_profile: bool = False,
+) -> Union[float, Tuple[float, np.ndarray]]:
     """
     Charge Q at τ=0 with ghost reconstruction (half-box):
       y_plus  = ybar[:,0],  y_minus  = y[:,0]
@@ -415,6 +375,8 @@ def compute_charge_tau0_ghost_2d(
     if subtract_background:
         Q -= Q_homogeneous_ball(omega=omega, phi_false=rho0, r_max=float(r[-1]))
 
+    if return_profile:
+        return (Q, np.asarray(qdens, dtype=float))
     return Q
 
 
@@ -424,9 +386,12 @@ def compute_energy_tau0_ghost_2d(
     ybar: np.ndarray,
     *,
     subtract_background: bool = True,
-) -> float:
+    return_profile: bool = False,
+) -> Union[float, Tuple[float, np.ndarray]]:
     """
     Energy E(τ=0) with ghost reconstruction (half-box) and midpoint.
+    Density: dens = -(phi_tau*phibar_tau) + (phi_r*phibar_r) + V (minus sign is correct).
+    subtract_background: pointwise subtract dens_bg = omega^2*rho0^2 + V(rho0) so E_hom ≈ 0.
     """
     y = np.asarray(y)
     ybar = np.asarray(ybar)
@@ -465,12 +430,168 @@ def compute_energy_tau0_ghost_2d(
     u_pos = np.maximum(u, 0.0)
     rho = np.sqrt(u_pos + rho_eps)
 
-    V = solver.U(rho)
+    V_full = solver.U(rho)
+    dens_field = -(phi_tau0 * phibar_tau0) + (phi_r0 * phibar_r0) + V_full
     if subtract_background:
-        V = V - solver.U(np.full_like(rho, rho0_bg))
+        dens_bg = _homogeneous_energy_density_2d(solver, r, omega, rho0_bg)
+        dens_field = dens_field - dens_bg
+    e_dens = np.asarray(dens_field.real, dtype=float)
+    E = float(4.0 * np.pi * simpson(r**2 * e_dens, x=r))
 
-    dens = -(phi_tau0 * phibar_tau0) + (phi_r0 * phibar_r0) + V
-    return float(4.0 * np.pi * simpson(r**2 * dens.real, x=r))
+    if return_profile:
+        return (E, e_dens)
+    return E
+
+
+def compute_charge_density_tau0_ghost_2d(
+    solver: Any,
+    y: np.ndarray,
+    ybar: np.ndarray,
+    *,
+    subtract_background: bool = True,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Charge density q(r) at τ=0 with ghost reconstruction (twisted BC).
+    Returns (r_grid, q_r) so that Q = 4π ∫ r² q(r) dr with the same discretization as totals.
+    """
+    _, q_r = compute_charge_tau0_ghost_2d(
+        solver, y, ybar, subtract_background=subtract_background, return_profile=True
+    )
+    r = np.asarray(solver.grid.r, dtype=float)
+    return (r, np.asarray(q_r, dtype=float))
+
+
+def compute_energy_density_tau0_ghost_2d(
+    solver: Any,
+    y: np.ndarray,
+    ybar: np.ndarray,
+    *,
+    subtract_background: bool = True,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Energy density e(r) at τ=0 with ghost reconstruction (twisted BC).
+    Returns (r_grid, e_r) so that E = 4π ∫ r² e(r) dr with the same discretization as totals.
+    """
+    _, e_r = compute_energy_tau0_ghost_2d(
+        solver, y, ybar, subtract_background=subtract_background, return_profile=True
+    )
+    r = np.asarray(solver.grid.r, dtype=float)
+    return (r, np.asarray(e_r, dtype=float))
+
+
+def compute_observables_tau0_ghost(
+    solver: Any,
+    x: np.ndarray,
+    *,
+    subtract_background_charge: bool = False,
+    subtract_background_energy: bool = True,
+) -> dict:
+    """
+    Single convenience wrapper for τ=0 ghost observables used everywhere in logs.
+    Unpacks x -> (y, ybar), computes Q_ghost, E_ghost, q_r, e_r and summary stats.
+    Returns dict with: Q, E, r, q_r, e_r, q_max, r_at_q_max, e_max, r_at_e_max.
+
+    In scans we typically want: Q = total charge (subtract_background_charge=False),
+    E = energy relative to homogeneous (subtract_background_energy=True) so E_hom ≈ 0.
+    """
+    y, ybar = solver.unpack(x)
+    r = np.asarray(solver.grid.r, dtype=float)
+
+    Q = float(
+        compute_charge_tau0_ghost_2d(
+            solver, y, ybar, subtract_background=subtract_background_charge, return_profile=False
+        )
+    )
+    E = float(
+        compute_energy_tau0_ghost_2d(
+            solver, y, ybar, subtract_background=subtract_background_energy, return_profile=False
+        )
+    )
+    _, q_r = compute_charge_tau0_ghost_2d(
+        solver, y, ybar, subtract_background=subtract_background_charge, return_profile=True
+    )
+    _, e_r = compute_energy_tau0_ghost_2d(
+        solver, y, ybar, subtract_background=subtract_background_energy, return_profile=True
+    )
+    q_r = np.asarray(q_r, dtype=float)
+    e_r = np.asarray(e_r, dtype=float)
+
+    q_max = float(np.max(np.abs(q_r))) if q_r.size else 0.0
+    e_max = float(np.max(np.abs(e_r))) if e_r.size else 0.0
+    r_at_q_max = float(r[int(np.argmax(np.abs(q_r)))]) if q_r.size else 0.0
+    r_at_e_max = float(r[int(np.argmax(np.abs(e_r)))]) if e_r.size else 0.0
+
+    # Volume and densities (same convention as 1D: V = (4/3)*pi*Lr^3)
+    # Use true Lr = dr*Nr to match notebook (e.g. Lr_diag = sol_eta.grid.dr * sol_eta.grid.Nr)
+    if hasattr(solver.grid, "dr") and hasattr(solver.grid, "Nr"):
+        Lr = float(solver.grid.dr * solver.grid.Nr)
+    else:
+        Lr = float(getattr(solver.grid, "Lr", r[-1] if r.size else 0.0))
+    V = (4.0 / 3.0) * np.pi * (Lr**3)
+    rho_Q = Q / V if V > 0 else 0.0
+    rho_E = E / V if V > 0 else 0.0
+
+    return {
+        "Q": Q,
+        "E": E,
+        "r": r,
+        "q_r": q_r,
+        "e_r": e_r,
+        "q_max": q_max,
+        "e_max": e_max,
+        "r_at_q_max": r_at_q_max,
+        "r_at_e_max": r_at_e_max,
+        "V": float(V),
+        "rho_Q": float(rho_Q),
+        "rho_E": float(rho_E),
+    }
+
+
+def assert_E_hom_near_zero(
+    solver: Any,
+    *,
+    tol: float = 1e-3,
+    message: str = "E (subtracted) for homogeneous config should be ≈ 0",
+) -> float:
+    """
+    Self-check: build homogeneous field (y=ybar=0), compute E with subtract_background_energy=True,
+    and assert |E| < tol. Returns E so callers can log it. Use to prevent regressions.
+    tol can be relaxed for coarse grids (e.g. 1e-6 to 1e-3 depending on resolution).
+    """
+    x_bg = solver._zero_vec()
+    y, ybar = solver.unpack(x_bg)
+    E = float(
+        compute_energy_tau0_ghost_2d(
+            solver, y, ybar, subtract_background=True, return_profile=False
+        )
+    )
+    if abs(E) >= tol:
+        raise AssertionError(f"{message}: got E = {E:.6e}, tol = {tol}")
+    return E
+
+
+def compute_targets_tau0_ghost(
+    solver: Any,
+    *,
+    subtract_background_charge: bool = False,
+    subtract_background_energy: bool = True,
+) -> dict:
+    """
+    Compute TARGET charge/energy and densities by applying the same τ=0 ghost
+    observable definitions to the homogeneous background configuration (y=ybar=0)
+    on the same grid. Used for ratio_Q = Q/Q_target, ratio_E = E/E_target.
+
+    Defaults: subtract_background_charge=False (Q_target = total charge of hom),
+    subtract_background_energy=True (E_target ≈ 0 for homogeneous; use for diagnostics).
+    Do NOT use E_target = omega*Q_target; E comes from the same ghost definition.
+    """
+    x_bg = solver._zero_vec()
+    return compute_observables_tau0_ghost(
+        solver,
+        x_bg,
+        subtract_background_charge=subtract_background_charge,
+        subtract_background_energy=subtract_background_energy,
+    )
 
 
 __all__ = [
@@ -493,4 +614,9 @@ __all__ = [
     "compute_energy_2d",
     "compute_charge_tau0_ghost_2d",
     "compute_energy_tau0_ghost_2d",
+    "compute_charge_density_tau0_ghost_2d",
+    "compute_energy_density_tau0_ghost_2d",
+    "compute_observables_tau0_ghost",
+    "assert_E_hom_near_zero",
+    "compute_targets_tau0_ghost",
 ]

@@ -72,23 +72,19 @@ from . import observables_2d
 
 def _format_obs_line(obs: Dict[str, Any], tgt: Optional[Dict[str, Any]] = None) -> str:
     """
-    Single helper for observables logging: one line with Q, E, rho_Q, rho_E and ratios vs target.
+    Single helper for observables logging: one line with rho_Q, rho_E and ratios vs reference.
     Used in Newton callback, scans, and final summaries. All values from tau=0 ghost.
+    Reference densities (rho_Q_ref, rho_E_ref) come from tgt (homogeneous on same grid).
     """
-    Q, E = obs.get("Q", 0.0), obs.get("E", 0.0)
     rho_Q = obs.get("rho_Q", 0.0)
     rho_E = obs.get("rho_E", 0.0)
-    tQ = tgt.get("Q") if tgt else None
-    tE = tgt.get("E") if tgt else None
-    rho_Q_t = tgt.get("rho_Q") if tgt else None
-    rho_E_t = tgt.get("rho_E") if tgt else None
-    ratio_Q = (Q / tQ) if (tQ is not None and abs(tQ) > 1e-30) else float("nan")
-    ratio_E = (E / tE) if (tE is not None and abs(tE) > 1e-30) else float("nan")
-    ratio_rho_Q = (rho_Q / rho_Q_t) if (rho_Q_t is not None and abs(rho_Q_t) > 1e-30) else float("nan")
-    ratio_rho_E = (rho_E / rho_E_t) if (rho_E_t is not None and abs(rho_E_t) > 1e-30) else float("nan")
+    rho_Q_ref = tgt.get("rho_Q") if tgt else None
+    rho_E_ref = tgt.get("rho_E") if tgt else None
+    ratio_rho_Q = (rho_Q / rho_Q_ref) if (rho_Q_ref is not None and abs(rho_Q_ref) > 1e-30) else float("nan")
+    ratio_rho_E = (rho_E / rho_E_ref) if (rho_E_ref is not None and abs(rho_E_ref) > 1e-30) else float("nan")
     return (
-        f"charge={Q:.6e}, energy={E:.6e}, rhoQ={rho_Q:.6e}, rhoE={rho_E:.6e}, "
-        f"ratioQ={ratio_Q:.4f}, ratioE={ratio_E:.4f}"
+        f"rhoQ={rho_Q:.6e}, rhoE={rho_E:.6e}, "
+        f"rho_Q/rho_Q_ref={ratio_rho_Q:.4f}, rho_E/rho_E_ref={ratio_rho_E:.4f}"
     )
 
 
@@ -347,8 +343,9 @@ class Bubble2DSolution:
     E_tau0: float
     sanity: Dict[str, Any]
     iteration_history: Optional[List[Dict[str, Any]]] = None  # if solve(..., store_iteration_history=True)
-    # τ=0 ghost observables for plotting (set when Newton converges)
-    observables_ghost: Optional[Dict[str, Any]] = None  # Q, E, r, q_r, e_r, q_max, e_max, ...
+    observables_ghost: Optional[Dict[str, Any]] = None  # Q, E, E_hom, energy_ratio, r, q_r, e_r, ...
+    E_hom: float = 0.0       # homogeneous energy (canonical)
+    energy_ratio: float = 0.0  # E_tau0 / E_hom
 
     @property
     def success(self) -> bool:
@@ -1190,14 +1187,12 @@ class Bubble2DSolver:
         index_tau: int = 0,
         *,
         return_profile: bool = False,
-        subtract_background: bool = True,
     ) -> float | tuple[float, np.ndarray]:
-        """Energy on a tau slice; implemented in observables_2d.compute_energy_2d."""
+        """Energy on a tau slice (canonical H_E, no subtraction)."""
         return observables_2d.compute_energy_2d(
             self, y, ybar,
             index_tau=index_tau,
             return_profile=return_profile,
-            subtract_background=subtract_background,
         )
 
     def compute_charge_tau0_ghost(
@@ -1220,13 +1215,11 @@ class Bubble2DSolver:
         y: np.ndarray,
         ybar: np.ndarray,
         *,
-        subtract_background: bool = True,
         return_profile: bool = False,
     ):
-        """Energy E(τ=0) by ghost reconstruction; returns E or (E, e_r) if return_profile."""
-        return observables_2d.compute_energy_tau0_ghost_2d(
+        """H_E(τ=0) by ghost reconstruction (Euclidean Hamiltonian-like). Returns E or (E, e_r). For physical energy use observables_2d.compute_energy_minkowski_tau0_ghost_2d."""
+        return observables_2d.compute_HE_euclidean_tau0_ghost_2d(
             self, y, ybar,
-            subtract_background=subtract_background,
             return_profile=return_profile,
         )
 
@@ -1238,28 +1231,23 @@ class Bubble2DSolver:
         return_profiles: bool = True,
     ) -> Dict[str, Any]:
         """
-        Ground-truth observables at τ=0 (ghost reconstruction). Single source of truth for Q, E, densities.
-        Returns dict with: Q, E, r, q_r, e_r, q_max, e_max, r_at_q_max, r_at_e_max, V, rho_Q, rho_E.
+        Observables at τ=0 (ghost): Q, E (canonical), E_hom, energy_ratio, densities, ...
+        subtract_background applies only to charge.
         """
         out = observables_2d.compute_observables_tau0_ghost(
             self,
             x,
             subtract_background_charge=subtract_background,
-            subtract_background_energy=subtract_background,
         )
         if not return_profiles:
             out = {k: v for k, v in out.items() if k not in ("r", "q_r", "e_r")}
         return out
 
     def targets_tau0(self, *, subtract_background: bool = False) -> Dict[str, Any]:
-        """
-        Target Q, E and densities from homogeneous background using the same τ=0 ghost definition.
-        Use for ratios; do not use E_target = omega*Q.
-        """
+        """Target observables from homogeneous (y=0). E_target = E_hom."""
         return observables_2d.compute_targets_tau0_ghost(
             self,
             subtract_background_charge=subtract_background,
-            subtract_background_energy=subtract_background,
         )
 
     # -------------------------------------------------------------------------
@@ -1544,13 +1532,12 @@ class Bubble2DSolver:
             rho0_it = np.sqrt(np.maximum(u0 + float(self.settings.rho_eps), 0.0))
             iteration_history.append({"iter": 0, "res_norm": float(np.nan), "rho": rho0_it.copy()})
 
-        # Targets once per solve: Q total (no charge sub), E relative to hom (energy sub so E_target ≈ 0)
+        # Targets from homogeneous (E_target = E_hom for ratio E/E_hom)
         _targets_cache: Dict[str, Any] = {}
         try:
             _targets_cache = observables_2d.compute_targets_tau0_ghost(
                 self,
                 subtract_background_charge=False,
-                subtract_background_energy=True,
             )
         except Exception:
             pass
@@ -1582,9 +1569,19 @@ class Bubble2DSolver:
                 obs = observables_2d.compute_observables_tau0_ghost(
                     self, x,
                     subtract_background_charge=False,
-                    subtract_background_energy=True,
                 )
-                extra = ", " + _format_obs_line(obs, _targets_cache)
+                # Ensure we have reference densities (homogeneous on same grid)
+                tgt = _targets_cache
+                if (not tgt or tgt.get("rho_Q") is None or tgt.get("rho_E") is None):
+                    from .observables_1d import Q_homogeneous_ball
+                    r_max = float(self.grid.r[-1])
+                    V = (4.0 / 3.0) * np.pi * r_max**3
+                    Q_ref = float(Q_homogeneous_ball(float(self.omega), float(self.rho0), r_max))
+                    E_ref = float(observables_2d.homogeneous_energy_2d(
+                        float(self.omega), float(self.rho0), r_max, self.U
+                    ))
+                    tgt = dict(tgt or {}, rho_Q=Q_ref / V, rho_E=E_ref / V)
+                extra = ", " + _format_obs_line(obs, tgt)
             except Exception:
                 pass
             print(f"[Newton-explicit] iter={it:02d}, ||F||={nF:.3e}{extra}")
@@ -1604,18 +1601,26 @@ class Bubble2DSolver:
         y, ybar = self.unpack(nr.x)
         sanity = self.run_sanity_tests()
 
-        # Ground truth: τ=0 ghost Q (total) and E (relative to hom, so E_target ≈ 0)
+        # Ground truth: τ=0 ghost Q (total), E (canonical), E_hom, energy_ratio
         obs_ghost = observables_2d.compute_observables_tau0_ghost(
             self, nr.x,
             subtract_background_charge=False,
-            subtract_background_energy=True,
         )
         Q_ghost = obs_ghost["Q"]
         E_ghost = obs_ghost["E"]
+        E_hom = obs_ghost.get("E_hom")
+        energy_ratio = obs_ghost.get("energy_ratio")
+        if E_hom is None or energy_ratio is None:
+            E_hom = float(observables_2d.homogeneous_energy_2d(
+                float(self.omega), float(self.rho0), float(self.grid.r[-1]), self.U
+            ))
+            energy_ratio = (E_ghost / E_hom) if abs(E_hom) > 1e-30 else float("nan")
+        else:
+            E_hom = float(E_hom)
+            energy_ratio = float(energy_ratio)
         tgt = _targets_cache or observables_2d.compute_targets_tau0_ghost(
             self,
             subtract_background_charge=False,
-            subtract_background_energy=True,
         )
         obs_ghost["q_target_r"] = tgt.get("q_r")
         obs_ghost["e_target_r"] = tgt.get("e_r")
@@ -1654,6 +1659,8 @@ class Bubble2DSolver:
             sanity=sanity,
             iteration_history=iteration_history if store_iteration_history else None,
             observables_ghost=obs_ghost,
+            E_hom=E_hom,
+            energy_ratio=energy_ratio,
         )
 
     # -------------------------------------------------------------------------

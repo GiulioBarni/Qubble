@@ -538,7 +538,7 @@ def run_regression_checks(
     x_test = solver._zero_vec()  # homogeneous
     obs_solver = solver.observables_tau0(x_test, subtract_background=False, return_profiles=False)
     obs_module = observables_2d.compute_observables_tau0_ghost(
-        solver, x_test, subtract_background_charge=False, subtract_background_energy=False
+        solver, x_test, subtract_background_charge=False
     )
     for key in ("Q", "E", "rho_Q", "rho_E"):
         a = obs_solver.get(key)
@@ -557,9 +557,9 @@ def run_regression_checks(
         raise AssertionError("run_regression_checks: targets_tau0() must return Q and E")
     results["targets_ok"] = True
 
-    # 5) Energy background subtraction: E (subtracted) for homogeneous must be ≈ 0
-    E_hom = observables_2d.assert_E_hom_near_zero(solver, tol=1e-3)
-    results["E_hom_near_zero"] = True
-    results["E_hom_value"] = float(E_hom)
+    # 5) E for homogeneous (y=0) must match homogeneous_energy_2d
+    E_ghost = observables_2d.assert_E_hom_consistent(solver, tol=1e-3)
+    results["E_hom_consistent"] = True
+    results["E_hom_value"] = float(E_ghost)
 
     return results

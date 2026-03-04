@@ -69,7 +69,7 @@ def newton_solve(
     success = False
     
     # Threshold for divergence detection
-    DIVERGENCE_THRESHOLD = 1e10
+    DIVERGENCE_THRESHOLD = 1e20
 
     for it in range(1, max_iter + 1):
         F = residual(x)

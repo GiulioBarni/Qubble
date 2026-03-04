@@ -1524,12 +1524,15 @@ class Bubble2DSolver:
                 raise ValueError("x0 has wrong size for legacy mode (expected 2*Nsite).")
 
         iteration_history: List[Dict[str, Any]] = []
-        # Store initial state (iter 0) so the first curve in the plot is unambiguously the seed
+        # Store last Newton state and rho at every iteration for plotting (even on non-convergence)
+        self._last_newton_x = np.asarray(x0).copy()
+        self._newton_rho_history: List[Dict[str, Any]] = []
+        y0, ybar0 = self.unpack(x0)
+        phi0, phibar0 = self.phi(y0, ybar0)
+        u0 = (phi0 * phibar0).real
+        rho0_it = np.sqrt(np.maximum(u0 + float(self.settings.rho_eps), 0.0))
+        self._newton_rho_history.append({"iter": 0, "res_norm": float("nan"), "rho": rho0_it.copy()})
         if store_iteration_history:
-            y0, ybar0 = self.unpack(x0)
-            phi0, phibar0 = self.phi(y0, ybar0)
-            u0 = (phi0 * phibar0).real
-            rho0_it = np.sqrt(np.maximum(u0 + float(self.settings.rho_eps), 0.0))
             iteration_history.append({"iter": 0, "res_norm": float(np.nan), "rho": rho0_it.copy()})
 
         # Targets from homogeneous (E_target = E_hom for ratio E/E_hom)
@@ -1556,11 +1559,13 @@ class Bubble2DSolver:
             raise NewtonConvergenceError("Line search failed to find a decreasing step.")
 
         def callback(it: int, x: np.ndarray, F: np.ndarray, nF: float) -> None:
+            self._last_newton_x = np.asarray(x).copy()
+            y_cb, ybar_cb = self.unpack(x)
+            phi_cb, phibar_cb = self.phi(y_cb, ybar_cb)
+            u = (phi_cb * phibar_cb).real
+            rho_it = np.sqrt(np.maximum(u + float(self.settings.rho_eps), 0.0))
+            self._newton_rho_history.append({"iter": it, "res_norm": float(nF), "rho": rho_it.copy()})
             if store_iteration_history:
-                y_cb, ybar_cb = self.unpack(x)
-                phi_cb, phibar_cb = self.phi(y_cb, ybar_cb)
-                u = (phi_cb * phibar_cb).real
-                rho_it = np.sqrt(np.maximum(u + float(self.settings.rho_eps), 0.0))
                 iteration_history.append({"iter": it, "res_norm": float(nF), "rho": rho_it.copy()})
             if not do_verbose:
                 return

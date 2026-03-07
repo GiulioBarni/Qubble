@@ -93,7 +93,7 @@ class Fields:
 
 
 class PotentialModel:
-    """Potential interface for compute_negative_mode_1d: dV_ds(s), d2V_ds2(s) with s = phi*phibar (real)."""
+    """Potential interface for compute_negative_mode_1d: dV_ds(s), d2V_ds2(s) with s = phi*phibar = rho^2/2 (real)."""
 
     def __init__(self, U: Callable, dU: Callable, d2U: Callable):
         self._U = U
@@ -102,15 +102,15 @@ class PotentialModel:
 
     def dV_ds(self, s: np.ndarray) -> np.ndarray:
         s = np.asarray(s, dtype=float)
-        rho = np.sqrt(np.maximum(s, 1e-20))
-        return np.asarray(self._dU(rho) / (2.0 * rho), dtype=float)
+        rho = np.sqrt(2.0 * np.maximum(s, 1e-20))
+        return np.asarray(self._dU(rho) / rho, dtype=float)
 
     def d2V_ds2(self, s: np.ndarray) -> np.ndarray:
         s = np.asarray(s, dtype=float)
-        rho = np.sqrt(np.maximum(s, 1e-20))
+        rho = np.sqrt(2.0 * np.maximum(s, 1e-20))
         dU = self._dU(rho)
         d2U = self._d2U(rho)
-        return np.asarray((d2U * rho - dU) / (4.0 * rho**3), dtype=float)
+        return np.asarray((d2U * rho - dU) / (rho**3), dtype=float)
 
 
 class ResidualOperator:
@@ -357,9 +357,9 @@ def compute_Dp_shooting_1d(
         y'(rmax) - y(rmax)/rmax = 0  (applied to both components).
 
     The coupled ODE is the same structure as in your Q-ball compute_unstable_mode,
-    but with V1,V2 obtained from PotentialModel for V(s), s=rho^2:
+    but with V1,V2 obtained from PotentialModel for V(s), s=|phi|^2=rho^2/2:
 
-        rho(r) = sqrt( Re(phi*phibar) )   (for the critical profile this should be real/positive)
+        rho(r) = sqrt( 2*Re(phi*phibar) )   (for the critical profile this should be real/positive)
         V1(r)  = 2 * V_s(s)
         V2(r)  = 4 * rho * V_ss(s)
 
@@ -387,12 +387,12 @@ def compute_Dp_shooting_1d(
     s_bg = (phi * phibar).real
     # Clamp tiny negative numerical noise
     s_bg = np.maximum(s_bg, 0.0)
-    rho_bg = np.sqrt(s_bg)
+    rho_bg = np.sqrt(2.0 * s_bg)
 
     V_s = potential.dV_ds(s_bg)
     V_ss = potential.d2V_ds2(s_bg)
 
-    # Q-ball mapping for V(s) with s=rho^2
+    # Q-ball mapping for V(s) with s=|phi|^2=rho^2/2
     V1_bg = 2.0 * V_s
     V2_bg = 4.0 * rho_bg * V_ss
 
@@ -587,10 +587,10 @@ def compute_negative_mode_1d(
 # ---------------------------------------------------------------------
 
 def _estimate_rho_hom_from_tail(phi: np.ndarray, phibar: np.ndarray, m: int = 8) -> float:
-    """Robust estimate of rho_hom ~ sqrt(Re(phi*phibar)) from the tail."""
+    """Robust estimate of rho_hom ~ sqrt(2*Re(phi*phibar)) from the tail."""
     m = int(max(1, min(m, phi.size)))
     s_tail = np.mean((phi[-m:] * phibar[-m:]).real)
-    return float(np.sqrt(max(s_tail, 0.0)))
+    return float(np.sqrt(2.0 * max(s_tail, 0.0)))
 
 
 def _tau_ramp_halfbox(tau: np.ndarray) -> np.ndarray:

@@ -251,11 +251,12 @@ class PiecewiseQuarticPotential:
 
 
 def solve_rho0_for_omega(omega: float, dU: PotentialFn, bracket: Tuple[float, float], rtol: float = 1e-12) -> float:
-    """Solve homogeneous stationarity: dU/dρ(ρ0) = 2 ω^2 ρ0."""
+    """Solve homogeneous stationarity in |phi|: dU/dρ(sqrt(2)x) = ω^2 sqrt(2)x, x=rho0=|phi|."""
     omega = float(omega)
 
-    def f(rho: float) -> float:
-        return float(dU(np.array([rho]))[0] - 2.0 * omega * omega * rho)
+    def f(x: float) -> float:
+        rho_phys = np.sqrt(2.0) * x
+        return float(dU(np.array([rho_phys]))[0] - omega * omega * rho_phys)
 
     a, b = map(float, bracket)
     fa, fb = f(a), f(b)
@@ -266,6 +267,67 @@ def solve_rho0_for_omega(omega: float, dU: PotentialFn, bracket: Tuple[float, fl
     if fa * fb > 0.0:
         raise ValueError(f"Bad bracket for rho0: f(a)={fa:+.3e}, f(b)={fb:+.3e}")
     return float(brentq(f, a, b, xtol=rtol, rtol=rtol, maxiter=300))
+
+
+def _omega2_minus_2W_consistent(
+    x: float,
+    omega: float,
+    dU: PotentialFn,
+    s_smooth_eps: float,
+    rho_eps: float,
+) -> float:
+    """
+    Discrete-consistent mismatch used by the 2D solver background:
+      f(x) = omega^2 - 2*W(u=x^2),
+    with u_pos from smooth_pos and rho_phys = sqrt(2*u_pos + rho_eps).
+    """
+    x = float(x)
+    omega = float(omega)
+    eps = float(s_smooth_eps)
+    rho_eps = float(rho_eps)
+    u = x * x
+    root = np.sqrt(u * u + eps * eps)
+    u_pos = 0.5 * (u + root)
+    rho_phys = float(np.sqrt(max(2.0 * u_pos + rho_eps, 1e-300)))
+    dU_val = float(dU(np.array([rho_phys], dtype=float))[0])
+    W = dU_val / (2.0 * rho_phys)
+    return float(omega * omega - 2.0 * W)
+
+
+def solve_rho0_for_omega_consistent(
+    omega: float,
+    dU: PotentialFn,
+    d2U: PotentialFn,
+    bracket: Tuple[float, float],
+    s_smooth_eps: float,
+    rho_eps: float,
+    rtol: float = 1e-14,
+) -> float:
+    """
+    Solve x=rho0=|phi| from the exact discrete-consistent condition used by the solver:
+      omega^2 - 2*W(u=x^2) = 0,
+    where W is built with smooth_pos(u) and rho_phys = sqrt(2*u_pos + rho_eps).
+    """
+    _ = d2U  # kept for API symmetry and future use
+
+    def f(x: float) -> float:
+        return _omega2_minus_2W_consistent(
+            x=x,
+            omega=omega,
+            dU=dU,
+            s_smooth_eps=s_smooth_eps,
+            rho_eps=rho_eps,
+        )
+
+    a, b = map(float, bracket)
+    fa, fb = f(a), f(b)
+    if fa == 0.0:
+        return a
+    if fb == 0.0:
+        return b
+    if fa * fb > 0.0:
+        raise ValueError(f"Bad bracket for rho0 (consistent): f(a)={fa:+.3e}, f(b)={fb:+.3e}")
+    return float(brentq(f, a, b, xtol=rtol, rtol=rtol, maxiter=500))
 
 
 # -----------------------------------------------------------------------------
@@ -398,7 +460,48 @@ class Bubble2DSolver:
         self.eta0 = float(settings.eta0)
 
         if settings.rho0 is None:
-            settings.rho0 = solve_rho0_for_omega(self.omega, dU, settings.rho0_bracket)
+            settings.rho0 = solve_rho0_for_omega_consistent(
+                self.omega,
+                dU,
+                d2U,
+                settings.rho0_bracket,
+                settings.s_smooth_eps,
+                settings.rho_eps,
+            )
+        else:
+            # Backward-compatible guard:
+            # if user passed rho0 as physical modulus rho_phys (common when using vacua_of_Omega),
+            # convert to solver convention rho0=|phi|=rho_phys/sqrt(2).
+            rho0_in = float(settings.rho0)
+            rho_phys_from_phi = np.sqrt(2.0) * rho0_in
+            res_solver_conv = float(dU(np.array([rho_phys_from_phi]))[0] - self.omega * self.omega * rho_phys_from_phi)
+            res_phys_conv = float(dU(np.array([rho0_in]))[0] - self.omega * self.omega * rho0_in)
+            if abs(res_solver_conv) > 1e-6 and abs(res_phys_conv) < abs(res_solver_conv):
+                settings.rho0 = rho0_in / np.sqrt(2.0)
+            # Optional snap to the exact discrete-consistent root when needed.
+            rho0_now = float(settings.rho0)
+            mismatch_now = _omega2_minus_2W_consistent(
+                x=rho0_now,
+                omega=self.omega,
+                dU=dU,
+                s_smooth_eps=settings.s_smooth_eps,
+                rho_eps=settings.rho_eps,
+            )
+            if abs(mismatch_now) > 1e-10:
+                a = max(1e-14, 0.8 * rho0_now)
+                b = max(a * (1.0 + 1e-12), 1.2 * rho0_now)
+                try:
+                    settings.rho0 = solve_rho0_for_omega_consistent(
+                        self.omega,
+                        dU,
+                        d2U,
+                        (a, b),
+                        settings.s_smooth_eps,
+                        settings.rho_eps,
+                    )
+                except Exception:
+                    # Keep user-provided value if local snap bracket does not bracket.
+                    pass
         self.rho0 = float(settings.rho0)
 
         # Basic input validation
@@ -475,14 +578,14 @@ class Bubble2DSolver:
         """
         Returns:
           W(u_pos), Wp(u_pos)=dW/du_pos, u_pos, dupos_du
-        where W = dU/d(rho)/(2 rho) and rho = sqrt(u_pos + rho_eps).
+        where W = dU/d(rho)/(2 rho) and rho = sqrt(2*u_pos + rho_eps).
         """
         u_pos, dupos_du = self._smooth_pos(u)
-        rho = np.sqrt(u_pos + float(self.settings.rho_eps))
+        rho = np.sqrt(2.0 * u_pos + float(self.settings.rho_eps))
         dU = self.dU(rho)
         d2U = self.d2U(rho)
         W = dU / (2.0 * rho)
-        Wp = (d2U * rho - dU) / (4.0 * rho**3)
+        Wp = (d2U * rho - dU) / (2.0 * rho**3)
         return W, Wp, u_pos, dupos_du
 
     # -------------------------------------------------------------------------
@@ -630,17 +733,36 @@ class Bubble2DSolver:
                 y_rr = (y_jp1 - 2.0 * y[j, i] + y_jm1) / self.dr2
                 yb_rr = (yb_jp1 - 2.0 * ybar[j, i] + yb_jm1) / self.dr2
 
-                # Factor 2: tau-independent reduction must match 1D bounce ODE (bounce_1d.py).
-                # 1D: phi'' + 2/r*phi' = dV/dphi - 2*omega^2*phi.
-                # 2D uses W(u)=dU/(2*rho) with rho=sqrt(u); chain rule gives dV/dphi = 2*W*rho.
-                # To get dV/dphi - 2*omega^2*phi we need coefficient 2*(omega^2 - W) on y_tot.
-                A_coef = 2.0 * (self.omega * self.omega - W[j, i])
+                # Tau-independent reduction target:
+                # Phi'' + 2/r Phi' = 2 W(Phi) Phi - omega^2 Phi
+                # -> r*Phi'' + 2*Phi' + r*Phi*(omega^2 - 2W) = 0.
+                A_coef = (self.omega * self.omega - 2.0 * W[j, i])
                 Fy[j, i] = y_tt + y_rr + 2.0 * self.omega * y_t + A_coef * y_tot[j, i]
                 Fyb[j, i] = yb_tt + yb_rr - 2.0 * self.omega * yb_t + A_coef * ybar_tot[j, i]
 
         if self.settings.complex_saddle:
             return self._pack_ri(Fy, Fyb)
         return self._pack_2field(Fy, Fyb)
+
+    def residual_slice_norms(self, x: np.ndarray) -> Dict[str, Any]:
+        """
+        Per-τ residual L2 norms (integrated over r) for quick diagnostics.
+        Returns combined and per-field norms, plus the τ-index of max residual.
+        """
+        F = self.residual(x)
+        Fy, Fyb = self.unpack(F)  # (Nr, Nt)
+        tau_norm_y = np.sqrt(np.sum(np.abs(Fy) ** 2, axis=0))
+        tau_norm_ybar = np.sqrt(np.sum(np.abs(Fyb) ** 2, axis=0))
+        tau_norm = np.sqrt(tau_norm_y**2 + tau_norm_ybar**2)
+        i_max = int(np.argmax(tau_norm)) if tau_norm.size else -1
+        return {
+            "tau_norm": np.asarray(tau_norm, dtype=float),
+            "tau_norm_y": np.asarray(tau_norm_y, dtype=float),
+            "tau_norm_ybar": np.asarray(tau_norm_ybar, dtype=float),
+            "max_tau_index": i_max,
+            "max_tau_norm": float(tau_norm[i_max]) if i_max >= 0 else float("nan"),
+            "is_past_boundary_max": bool(i_max == (self.Nt - 1)),
+        }
 
     # -------------------------------------------------------------------------
     # Jacobian
@@ -730,11 +852,11 @@ class Bubble2DSolver:
         return self.unpack(x_fields)
 
     def rho_map(self, y: np.ndarray, ybar: np.ndarray) -> np.ndarray:
-        """rho(r, tau) = sqrt(u_pos + rho_eps) with u = Re(phi_rot * phibar_rot)."""
+        """rho(r, tau) = sqrt(2*u_pos + rho_eps) with u = Re(phi_rot * phibar_rot)."""
         phi_rot, phibar_rot = self.phi_rot(y, ybar)
         u = (phi_rot * phibar_rot).real
         u_pos, _ = self._smooth_pos(u)
-        return np.sqrt(u_pos + float(self.settings.rho_eps))
+        return np.sqrt(2.0 * u_pos + float(self.settings.rho_eps))
 
     def _jacobian_2field_legacy(self, vec: np.ndarray) -> sp.csc_matrix:
         """
@@ -873,8 +995,7 @@ class Bubble2DSolver:
                     J[rowb, iyb(j + 1, i)] += 1.0 / self.dr2
 
                 # --- nonlinear term (legacy approximation) ---
-                # Factor 2: match tau-independent reduction to 1D bounce (see residual)
-                A_coef = 2.0 * (self.omega * self.omega - W[j, i])
+                A_coef = (self.omega * self.omega - 2.0 * W[j, i])
                 du_dy = (ybar_tot[j, i] * inv_r2_j).real
                 du_dyb = (y_tot[j, i] * inv_r2_j).real
                 chain = dupos_du[j, i]
@@ -1104,10 +1225,10 @@ class Bubble2DSolver:
                     J[row_FbI, vid(3, j + 1, i)] += 1.0 / self.dr2
 
                 # -----------------------------------------------------------------
-                # Nonlinear term: 2*(ω^2 - W(u)) * y_tot  (factor 2 for 1D bounce match)
+                # Nonlinear term: (ω^2 - 2W(u)) * y_tot
                 # -----------------------------------------------------------------
-                A = float(2.0 * (self.omega * self.omega - W[j, i]))
-                Wu = float(2.0 * W_u[j, i])  # d(2*(ω²-W))/du = -2*dW/du
+                A = float(self.omega * self.omega - 2.0 * W[j, i])
+                Wu = float(2.0 * W_u[j, i])  # dA/du = -2*dW/du
 
                 # components at this site
                 yR = float(y[j, i].real)
@@ -1124,7 +1245,7 @@ class Bubble2DSolver:
                 du_dbR = yRtot * inv_r2_j
                 du_dbI = -yI * inv_r2_j
 
-                # dA/dvar = - dW/dvar = - Wu * du/dvar
+                # dA/dvar = -2 dW/dvar = - Wu * du/dvar
                 dA_dyR = -Wu * du_dyR
                 dA_dyI = -Wu * du_dyI
                 dA_dbR = -Wu * du_dbR
@@ -1272,8 +1393,16 @@ class Bubble2DSolver:
         mx = float(np.max(np.abs(F0)))
 
         W0, *_ = self._W_Wp(np.array([self.rho0**2]))
-        mismatch = float(self.omega * self.omega - W0[0])
-        return dict(residual_norm=nrm, residual_max_abs=mx, omega2_minus_W=mismatch, rho0=self.rho0)
+        mismatch = float(self.omega * self.omega - 2.0 * W0[0])
+        r_rms = float(np.sqrt(np.mean(np.asarray(self.grid.r, dtype=float) ** 2)))
+        predicted = float(np.sqrt(2.0 * self.Nr * self.Nt) * abs(mismatch) * (r_rms * self.rho0))
+        return dict(
+            residual_norm=nrm,
+            residual_max_abs=mx,
+            omega2_minus_2W=mismatch,
+            predicted_norm=predicted,
+            rho0=self.rho0,
+        )
 
     def sanity_twist_source(self) -> Dict[str, Any]:
         """
@@ -1288,9 +1417,9 @@ class Bubble2DSolver:
         F0 = self.residual(x0)
         Fy, Fyb = self.unpack(F0)
 
-        # bulk mismatch term from omega^2 - W(rho0^2)
+        # bulk mismatch term from omega^2 - 2W(rho0^2)
         W0, *_ = self._W_Wp(np.array([self.rho0**2]))
-        mismatch = float(self.omega * self.omega - W0[0])
+        mismatch = float(self.omega * self.omega - 2.0 * W0[0])
 
         r = self.grid.r
         ytot = r * self.rho0  # since y=0
@@ -1320,7 +1449,7 @@ class Bubble2DSolver:
             eta0=float(self.eta0),
             omega=float(self.omega),
             rho0=float(self.rho0),
-            omega2_minus_W=mismatch,
+            omega2_minus_2W=mismatch,
             interior_reduced_norm=interior_norm,
             boundary_source_err_y=boundary_err_y,
             boundary_source_err_ybar=boundary_err_b,
@@ -1341,7 +1470,7 @@ class Bubble2DSolver:
         """
         Check that the 2D bulk operator reduces to the 1D bounce ODE for a tau-independent
         real profile at eta0=0. Builds phi(r) = rho0 + small bump, embeds as y = r*(phi - rho0),
-        compares 2D residual Fy with 1D operator (r*phi'' + 2*phi' + 2*r*phi*(omega^2 - W)).
+        compares 2D residual Fy with 1D operator (r*phi'' + 2*phi' + r*phi*(omega^2 - 2W)).
         Excludes r~0 and r~r_max where 2D uses different BC stencils.
         Fails loudly (raises AssertionError) if mismatch exceeds tolerance.
         """
@@ -1368,10 +1497,11 @@ class Bubble2DSolver:
         finally:
             self.eta0 = eta_save
             self.settings.eta0 = eta_save
-        W, _, _, _ = self._W_Wp(phi * phi)
+        u_phi = phi * phi
+        W, _, _, _ = self._W_Wp(u_phi)
         W = np.asarray(W).flatten()
-        # 1D operator: L1d = r*phi'' + 2*phi' + 2*r*phi*(omega^2 - W)
-        L1d = r * phi_pp + 2.0 * phi_p + 2.0 * r * phi * (self.omega**2 - W)
+        # 1D operator: L1d = r*phi'' + 2*phi' + r*phi*(omega^2 - 2W)
+        L1d = r * phi_pp + 2.0 * phi_p + r * phi * (self.omega**2 - 2.0 * W)
         Fy_slice = np.asarray(Fy.real[:, 0]).flatten()
         # Exclude boundaries (2D uses regularity/Neumann stencils there)
         j_lo = min(r_min_skip, r.size - 1)
@@ -1393,15 +1523,16 @@ class Bubble2DSolver:
     def potential_convention_report(self) -> str:
         """
         Short English summary of potential and 2D conventions (no physics change).
-        u = Re(phi_rot*phibar_rot), rho = sqrt(u_pos + rho_eps), W = dU/(2*rho),
-        bulk coefficient A_coef = 2*(omega^2 - W) for 1D/2D match.
+        u = Re(phi_rot*phibar_rot), rho_phys = sqrt(2*u_pos + rho_eps), W = dU/(2*rho_phys),
+        bulk coefficient A_coef = (omega^2 - 2W).
         """
         lines = [
             "Potential / 2D convention (source of truth):",
-            "  u = Re(phi_rot * phibar_rot),  rho = sqrt(smooth_pos(u) + rho_eps)",
-            "  W(rho) = dU(rho) / (2*rho)",
-            "  Bulk: A_coef = 2*(omega^2 - W)  [factor 2 for tau-indep -> 1D bounce ODE]",
-            "  Charge: q = (1/2)*Re(phibar*phi_tau - phi*phibar_tau),  Q = 4pi int r^2 q dr",
+            "  u = Re(phi_rot*phibar_rot)",
+            "  rho_phys = sqrt(2*smooth_pos(u) + rho_eps)",
+            "  W = dU(rho_phys)/(2*rho_phys)",
+            "  Bulk: A_coef = omega^2 - 2*W",
+            "  Charge: q = Re(phibar*phi_tau - phi*phibar_tau), Q = 4π∫ r^2 q dr",
         ]
         return "\n".join(lines)
 
@@ -1418,7 +1549,7 @@ class Bubble2DSolver:
         ok = d["residual_norm"] < 1e-6
         msg = (
             f"||F||={d['residual_norm']:.3e}. "
-            f"Background: omega^2-W(ρ0)={d['omega2_minus_W']:.3e} with ρ0={d['rho0']:.3e}."
+            f"Background: omega^2-2W(ρ0)={d['omega2_minus_2W']:.3e} with ρ0={d['rho0']:.3e}."
         )
         return ok, msg
 
@@ -1530,10 +1661,21 @@ class Bubble2DSolver:
         y0, ybar0 = self.unpack(x0)
         phi0, phibar0 = self.phi(y0, ybar0)
         u0 = (phi0 * phibar0).real
-        rho0_it = np.sqrt(np.maximum(u0 + float(self.settings.rho_eps), 0.0))
+        rho0_it = np.sqrt(np.maximum(2.0 * u0 + float(self.settings.rho_eps), 0.0))
         self._newton_rho_history.append({"iter": 0, "res_norm": float("nan"), "rho": rho0_it.copy()})
         if store_iteration_history:
             iteration_history.append({"iter": 0, "res_norm": float(np.nan), "rho": rho0_it.copy()})
+        if do_verbose:
+            try:
+                rs0 = self.residual_slice_norms(x0)
+                print(
+                    "[Seed residual-by-tau] "
+                    f"max at i={rs0['max_tau_index']} "
+                    f"(past={rs0['is_past_boundary_max']}), "
+                    f"||F||_tau,max={rs0['max_tau_norm']:.3e}"
+                )
+            except Exception:
+                pass
 
         # Targets from homogeneous (E_target = E_hom for ratio E/E_hom)
         _targets_cache: Dict[str, Any] = {}
@@ -1563,7 +1705,7 @@ class Bubble2DSolver:
             y_cb, ybar_cb = self.unpack(x)
             phi_cb, phibar_cb = self.phi(y_cb, ybar_cb)
             u = (phi_cb * phibar_cb).real
-            rho_it = np.sqrt(np.maximum(u + float(self.settings.rho_eps), 0.0))
+            rho_it = np.sqrt(np.maximum(2.0 * u + float(self.settings.rho_eps), 0.0))
             self._newton_rho_history.append({"iter": it, "res_norm": float(nF), "rho": rho_it.copy()})
             if store_iteration_history:
                 iteration_history.append({"iter": it, "res_norm": float(nF), "rho": rho_it.copy()})
@@ -1578,10 +1720,10 @@ class Bubble2DSolver:
                 # Ensure we have reference densities (homogeneous on same grid)
                 tgt = _targets_cache
                 if (not tgt or tgt.get("rho_Q") is None or tgt.get("rho_E") is None):
-                    from .observables_1d import Q_homogeneous_ball
+                    from .observables_1d import Q_homogeneous_ball_from_phi
                     r_max = float(self.grid.r[-1])
                     V = (4.0 / 3.0) * np.pi * r_max**3
-                    Q_ref = float(Q_homogeneous_ball(float(self.omega), float(self.rho0), r_max))
+                    Q_ref = float(Q_homogeneous_ball_from_phi(float(self.omega), float(self.rho0), r_max))
                     E_ref = float(observables_2d.homogeneous_energy_2d(
                         float(self.omega), float(self.rho0), r_max, self.U
                     ))
@@ -1589,7 +1731,17 @@ class Bubble2DSolver:
                 extra = ", " + _format_obs_line(obs, tgt)
             except Exception:
                 pass
-            print(f"[Newton-explicit] iter={it:02d}, ||F||={nF:.3e}{extra}")
+            tau_extra = ""
+            try:
+                rs = self.residual_slice_norms(x)
+                tau_extra = (
+                    f", tau-max i={rs['max_tau_index']}"
+                    f"{' (past)' if rs['is_past_boundary_max'] else ''}"
+                    f", ||F||_tau,max={rs['max_tau_norm']:.3e}"
+                )
+            except Exception:
+                pass
+            print(f"[Newton-explicit] iter={it:02d}, ||F||={nF:.3e}{tau_extra}{extra}")
 
         nr = newton_solve(
             residual=self.residual,
@@ -1649,7 +1801,13 @@ class Bubble2DSolver:
             print(f"  e_max = {obs_ghost['e_max']:.3e}  at r = {obs_ghost['r_at_e_max']:.4f}")
             d0 = sanity.get("background_eta0_zero", {})
             if d0:
-                print(f"  Sanity (η0=0): ||F||={d0.get('residual_norm', '—'):.3e}, ω²−W(ρ0)={d0.get('omega2_minus_W', '—'):.3e}")
+                print(
+                    "  Sanity (η0=0): "
+                    f"||F||={d0.get('residual_norm', '—'):.3e}, "
+                    f"max|F|={d0.get('residual_max_abs', '—'):.3e}, "
+                    f"pred≈{d0.get('predicted_norm', '—'):.3e}, "
+                    f"ω²−2W(ρ0)={d0.get('omega2_minus_2W', '—'):.3e}"
+                )
             print("")
 
         return Bubble2DSolution(

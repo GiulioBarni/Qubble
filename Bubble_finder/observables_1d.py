@@ -5,10 +5,10 @@ Single source of truth for 1D observables: Q, E_M (Minkowski energy), F_ω (gran
 functional), charge/energy density profiles, homogeneous ball Q/E in finite volume.
 
 Conventions:
-- Minkowski energy density: 𝓔_M = (∂r ρ)² + ω² ρ² + V(ρ)  =>  E_M = 4π ∫ r² 𝓔_M dr.
+- Minkowski energy density: 𝓔_M = 1/2(∂r ρ)² + 1/2 ω² ρ² + V(ρ)  =>  E_M = 4π ∫ r² 𝓔_M dr.
 - Charge: Q = 4π ω ∫ r² φ² dr  (φ = ρ in the ansatz φ = ρ e^{iωt}).
 - Grand-canonical / constrained functional: F_ω = E_M − ω Q = 4π ∫ r² [ ½(∂r φ)² + Ω(φ) ],
-  with Ω(φ) = V(φ) − ω² φ². Use F_ω for fixed-ω barrier comparisons, not for "physical energy".
+  with Ω(φ) = V(φ) − 1/2 ω² φ². Use F_ω for fixed-ω barrier comparisons, not for "physical energy".
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def compute_Fomega_1d_spherical(
     """
     Grand-canonical / constrained functional F_ω (NOT Minkowski energy).
 
-    F_ω = E_M − ω Q = 4π ∫ r² [ ½(∂_r φ)² + Ω(φ) ],  Ω(φ) = V(φ) − ω² φ².
+    F_ω = E_M − ω Q = 4π ∫ r² [ ½(∂_r φ)² + Ω(φ) ],  Ω(φ) = V(φ) − 1/2 ω² φ².
 
     Use for fixed-ω barrier / branch continuation. For microcanonical or "physical energy"
     comparisons use compute_energy_minkowski_1d_spherical (or compute_energy_physical_1d_spherical).
@@ -139,6 +139,14 @@ def Q_homogeneous_ball(omega: float, phi_false: float, r_max: float) -> float:
     return float(4.0 * np.pi * omega * (phi_false**2) * (r_max**3 / 3.0))
 
 
+def Q_homogeneous_ball_from_phi(omega: float, phi_amp: float, r_max: float) -> float:
+    """
+    Homogeneous charge when the input amplitude is |phi| = rho/sqrt(2):
+        Q_hom = 8π ω |phi|^2 (r_max^3/3).
+    """
+    return float(8.0 * np.pi * omega * (phi_amp**2) * (r_max**3 / 3.0))
+
+
 def _V_of_rho_array(V_of_rho, rho: np.ndarray) -> np.ndarray:
     """Evaluate V_of_rho on array; return 1D float array."""
     rho = np.asarray(rho, dtype=float)
@@ -156,7 +164,7 @@ def compute_energy_physical_1d_spherical(
     """
     Physical Minkowski energy E_M for 1D O(3)-symmetric configuration φ = ρ(r) e^{iωt}.
 
-    𝓔_M = (∂r ρ)² + ω² ρ² + V(ρ)  =>  E_M = 4π ∫_0^{R_ref} dr r² 𝓔_M.
+    𝓔_M = 1/2(∂r ρ)² + 1/2 ω² ρ² + V(ρ)  =>  E_M = 4π ∫_0^{R_ref} dr r² 𝓔_M.
 
     Same convention for homogeneous and bubble; use for microcanonical / conserved energy comparisons.
     V_of_rho is a callable: V_of_rho(rho) returns V(ρ), e.g. the solver potential U(ρ).
@@ -172,7 +180,7 @@ def compute_energy_physical_1d_spherical(
     Returns
     -------
     float
-        Minkowski energy E_M (no 1/2 factors in kinetic term).
+        Minkowski energy E_M.
     """
     r = np.asarray(r, dtype=float)
     rho = np.asarray(rho, dtype=float)
@@ -196,7 +204,7 @@ def compute_energy_physical_1d_spherical(
     drho_dr = np.gradient(rho_use, r_use, edge_order=2)
     drho_dr[0] = 0.0  # regularity at origin
     V_vals = _V_of_rho_array(V_of_rho, rho_use)
-    integrand = drho_dr**2 + (omega**2) * (rho_use**2) + V_vals
+    integrand = 0.5 * (drho_dr**2) + 0.5 * (omega**2) * (rho_use**2) + V_vals
     return float(4.0 * np.pi * simpson(r_use**2 * integrand, x=r_use))
 
 
@@ -246,7 +254,7 @@ def compute_free_energy_grandcanonical(
     """
     Grand-canonical functional F_ω = E − ωQ used in EoM (not the physical energy).
 
-    F_ω = 4π ∫ r² [ ½(∂r ρ)² + V(ρ) − ω² ρ² ] dr.
+    F_ω = 4π ∫ r² [ ½(∂r ρ)² + V(ρ) − ½ ω² ρ² ] dr.
 
     Do not label as "energy" in plots/prints; use for diagnostics only (e.g. ΔFω).
     """
@@ -266,7 +274,7 @@ def compute_free_energy_grandcanonical(
     drho_dr = np.gradient(rho_use, r_use, edge_order=2)
     drho_dr[0] = 0.0
     V_vals = _V_of_rho_array(V_of_rho, rho_use)
-    integrand = 0.5 * (drho_dr**2) + V_vals - (omega**2) * (rho_use**2)
+    integrand = 0.5 * (drho_dr**2) + V_vals - 0.5 * (omega**2) * (rho_use**2)
     return float(4.0 * np.pi * simpson(r_use**2 * integrand, x=r_use))
 
 
@@ -283,13 +291,14 @@ def check_homogeneous_consistency_1d(
     tol: float = 1e-5,
 ) -> None:
     """
-    Sanity check: for homogeneous φ = ρ0, E_M = V·(ω² ρ0² + V(ρ0)) and F_ω = V·(V(ρ0) − ω² ρ0²).
+    Sanity check: for homogeneous φ = ρ0, E_M = V·(1/2 ω² ρ0² + V(ρ0)) and
+    F_ω = V·(V(ρ0) − 1/2 ω² ρ0²).
     Raises AssertionError if computed values differ from these formulas beyond tol.
     """
     V_space = (4.0 / 3.0) * np.pi * r_max**3
     V_at_rho0 = float(np.asarray(V_of_rho(np.array([rho0]))).flat[0])
-    E_M_expected = V_space * ((omega**2) * (rho0**2) + V_at_rho0)
-    F_omega_expected = V_space * (V_at_rho0 - (omega**2) * (rho0**2))
+    E_M_expected = V_space * (0.5 * (omega**2) * (rho0**2) + V_at_rho0)
+    F_omega_expected = V_space * (V_at_rho0 - 0.5 * (omega**2) * (rho0**2))
 
     r = np.linspace(1e-10, r_max, 50)
     rho = np.full_like(r, rho0)
@@ -364,6 +373,7 @@ __all__ = [
     "compute_charge_density",
     "compute_energy_density",
     "Q_homogeneous_ball",
+    "Q_homogeneous_ball_from_phi",
     "compute_charge_1d_volume_corrected",
     "compute_energy_physical_1d_spherical",
     "compute_energy_minkowski_1d_spherical",

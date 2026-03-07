@@ -7,10 +7,11 @@ Purpose: 2D observables on the solver grid with twisted BC and ghost reconstruct
 CHARGE CONVENTION (IMPORTANT)
 -----------------------------
 We use
-    q(τ,r) = 1/2 * Re( phibar * ∂τ phi  -  phi * ∂τ phibar )
+    q(τ,r) = Re( phibar * ∂τ phi  -  phi * ∂τ phibar )
     Q(τ)   = 4π ∫_0^{rmax} dr r^2 q(τ,r)
 
-This choice is consistent with observables_1d: Q_hom = 4π ω ρ0^2 (rmax^3/3).
+This choice is consistent with observables_1d for solver.rho0=|phi|:
+Q_hom = 8π ω rho0^2 (rmax^3/3).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from scipy.integrate import simpson
 
 from .observables_1d import (
     Q_homogeneous_ball,
+    Q_homogeneous_ball_from_phi,
     compute_charge,
     compute_charge_1d_volume_corrected,
     compute_charge_density,
@@ -57,8 +59,8 @@ def compute_charge_like_2d_from_1d(
     Compute charge from 1D profile using the exact 2D definition and discretization.
 
     For a tau-independent config at tau=0: phi = phi_rot, phibar = phi_rot, and
-    q = (1/2)*Re(phibar*phi_tau - phi*phibar_tau) = omega * phi_rot^2.
-    So Q = 4π ω ∫ r² φ_rot² dr.
+    q = Re(phibar*phi_tau - phi*phibar_tau) = 2 ω phi_rot^2.
+    So Q = 8π ω ∫ r² φ_rot² dr.
 
     Uses the 2D r grid and Simpson integration so the result is directly
     comparable to compute_charge_tau0_ghost_2d on an embedded 1D config.
@@ -72,12 +74,12 @@ def compute_charge_like_2d_from_1d(
 
     # Interpolate 1D profile onto 2D r grid (same as embedding)
     phi_on_r2d = np.interp(r_2d, r_1d, phi_rot_1d, left=phi_rot_1d[0], right=phi_rot_1d[-1])
-    qdens = omega * (phi_on_r2d**2)
+    qdens = 2.0 * omega * (phi_on_r2d**2)
     Q = float(4.0 * np.pi * simpson(r_2d**2 * qdens, x=r_2d))
 
     if subtract_background:
         r_max = float(r_2d[-1])
-        Q -= Q_homogeneous_ball(omega=omega, phi_false=rho0, r_max=r_max)
+        Q -= Q_homogeneous_ball_from_phi(omega=omega, phi_amp=rho0, r_max=r_max)
     return Q
 
 
@@ -139,7 +141,8 @@ def _tau_derivative_centered(
 #   H_E = (∂τ φ)(∂τ φ̄) - (∂r φ)(∂r φ̄) - V(φ φ̄).
 # Minkowski energy density at τ-slice (turning point): |∂t φ|² = -(∂τ φ)(∂τ φ̄), so
 #   𝓔_M = -(∂τ φ)(∂τ φ̄) + (∂r φ)(∂r φ̄) + V(φ φ̄).
-# Homogeneous φ = ρ0 e^{ωτ}: H_E,hom = -ω²ρ0² - V(ρ0); E_M,hom = ω²ρ0² + V(ρ0).
+# Homogeneous phi=const with solver.rho0=|phi|:
+# H_E,hom = -ω²rho0² - U(sqrt(2)*rho0); E_M,hom = ω²rho0² + U(sqrt(2)*rho0).
 
 
 def homogeneous_HE_2d(
@@ -150,13 +153,14 @@ def homogeneous_HE_2d(
 ) -> float:
     """
     Homogeneous H_E (Euclidean Hamiltonian-like) for reference (y=0, ybar=0).
-    H_E,hom = -ω²ρ0² - V(ρ0). Do NOT use for physical energy comparison; use homogeneous_E_M_2d.
+    H_E,hom = -ω²rho0² - U(sqrt(2)*rho0), with rho0=|phi|.
+    Do NOT use for physical energy comparison; use homogeneous_E_M_2d.
     """
     omega = float(omega)
     rho0 = float(rho0)
     r_max = float(r_max)
     V_space = (4.0 / 3.0) * np.pi * (r_max**3)
-    rho0_arr = np.array([rho0], dtype=float)
+    rho0_arr = np.array([np.sqrt(2.0) * rho0], dtype=float)
     V_at_rho0 = float(np.asarray(U(rho0_arr)).flat[0])
     H_E_hom = -(omega**2) * (rho0**2) - V_at_rho0
     return float(V_space * H_E_hom)
@@ -174,13 +178,14 @@ def homogeneous_E_M_2d(
 ) -> float:
     """
     Homogeneous Minkowski energy E_M for reference (y=0, ybar=0).
-    E_M,hom = V_space * (ω² ρ0² + V(ρ0)). Use for microcanonical / physical energy comparison.
+    E_M,hom = V_space * (ω² rho0² + U(sqrt(2)*rho0)), with rho0=|phi|.
+    Use for microcanonical / physical energy comparison.
     """
     omega = float(omega)
     rho0 = float(rho0)
     r_max = float(r_max)
     V_space = (4.0 / 3.0) * np.pi * (r_max**3)
-    rho0_arr = np.array([rho0], dtype=float)
+    rho0_arr = np.array([np.sqrt(2.0) * rho0], dtype=float)
     V_at_rho0 = float(np.asarray(U(rho0_arr)).flat[0])
     return float(V_space * ((omega**2) * (rho0**2) + V_at_rho0))
 
@@ -202,7 +207,7 @@ def compute_charge_2d(
     Charge Q on a τ slice of the 2D field (y, ybar), with the solver's BC (twist/ghost).
 
     Convention (consistent with 1D):
-        q_phys = 1/2 * Re(phibar ∂τ phi - phi ∂τ phibar)
+        q_phys = Re(phibar ∂τ phi - phi ∂τ phibar)
         Q      = 4π ∫ r² q_phys dr
 
     NOTE:
@@ -250,7 +255,7 @@ def compute_charge_2d(
         phibar_tau = exp_m * (yb_t - omega * yb_tot)
 
         j_tau = phibar[:, i] * phi_tau - phi[:, i] * phibar_tau
-        qdens = 0.5 * j_tau.real
+        qdens = j_tau.real
 
         Q_tau[i] = float(4.0 * np.pi * simpson(r**2 * qdens, x=r))
 
@@ -258,7 +263,7 @@ def compute_charge_2d(
     Q0 = float(Q_tau[i0])
 
     if subtract_background:
-        Q_bg = Q_homogeneous_ball(omega=omega, phi_false=rho0, r_max=float(r[-1]))
+        Q_bg = Q_homogeneous_ball_from_phi(omega=omega, phi_amp=rho0, r_max=float(r[-1]))
         Q0 -= Q_bg
         Q_tau = Q_tau - Q_bg
 
@@ -334,7 +339,7 @@ def compute_energy_2d(
         else:
             u_pos = np.maximum(u, 0.0)
 
-        rho = np.sqrt(u_pos + rho_eps)
+        rho = np.sqrt(2.0 * u_pos + rho_eps)
         V_full = solver.U(rho)
         # H_E = (∂τ φ)(∂τ φ̄) - (∂r φ)(∂r φ̄) - V
         H_E = (phi_tau * phibar_tau) - (phi_r * phibar_r) - V_full
@@ -359,7 +364,7 @@ def compute_charge_tau0_ghost_2d(
       y_t = (y_plus - y_minus)/dt, ybar_t = (ybar_plus - ybar_minus)/dt.
     Same convention for both bubble and homogeneous (y=0): so Q_target from
     compute_targets_tau0_ghost(subtract_background_charge=False) = Q_hom.
-    Convention: q = 1/2 Re(phibar φ_τ - φ phibar_τ). No subtraction => total Q.
+    Convention: q = Re(phibar φ_τ - φ phibar_τ). No subtraction => total Q.
     """
     y = np.asarray(y)
     ybar = np.asarray(ybar)
@@ -393,11 +398,11 @@ def compute_charge_tau0_ghost_2d(
     phibar_tau0 = inv_r * (ybar_t0 - omega * (ybar0 + r * rho0))
 
     j = phibar0 * phi_tau0 - phi0 * phibar_tau0
-    qdens = 0.5 * j.real
+    qdens = j.real
     Q = float(4.0 * np.pi * simpson(r**2 * qdens, x=r))
 
     if subtract_background:
-        Q -= Q_homogeneous_ball(omega=omega, phi_false=rho0, r_max=float(r[-1]))
+        Q -= Q_homogeneous_ball_from_phi(omega=omega, phi_amp=rho0, r_max=float(r[-1]))
 
     if return_profile:
         return (Q, np.asarray(qdens, dtype=float))
@@ -452,7 +457,7 @@ def compute_HE_euclidean_tau0_ghost_2d(
 
     u = (phi0 * phibar0).real
     u_pos = np.maximum(u, 0.0)
-    rho = np.sqrt(u_pos + rho_eps)
+    rho = np.sqrt(2.0 * u_pos + rho_eps)
 
     V_full = solver.U(rho)
     H_E = (phi_tau0 * phibar_tau0) - (phi_r0 * phibar_r0) - V_full
@@ -505,7 +510,7 @@ def compute_energy_minkowski_tau0_ghost_2d(
 
     u = (phi0 * phibar0).real
     u_pos = np.maximum(u, 0.0)
-    rho = np.sqrt(u_pos + rho_eps)
+    rho = np.sqrt(2.0 * u_pos + rho_eps)
     V_full = solver.U(rho)
 
     # 𝓔_M = -(∂τφ)(∂τφ̄) + (∂rφ)(∂rφ̄) + V
@@ -620,7 +625,7 @@ def delta_Fomega_tau0_ghost_2d(
 ) -> float:
     """
     ΔF_ω = F_ω[config] − F_ω[homogeneous at same ω] at τ=0.
-    F_ω = E_M − ω Q; homogeneous F_ω,hom = E_M,hom − ω Q_hom = V·V(ρ0) (for φ=ρ0 e^{iωτ}).
+    F_ω = E_M − ω Q; homogeneous F_ω,hom = E_M,hom − ω Q_hom = V·U(sqrt(2)*rho0).
     """
     F_config = float(compute_Fomega_tau0_ghost_2d(solver, y, ybar, subtract_background_charge=False))
     r = np.asarray(solver.grid.r, dtype=float)
@@ -628,7 +633,7 @@ def delta_Fomega_tau0_ghost_2d(
     omega = float(getattr(solver, "omega"))
     rho0 = float(getattr(solver, "rho0"))
     V_space = (4.0 / 3.0) * np.pi * (r_max**3)
-    rho0_arr = np.array([rho0], dtype=float)
+    rho0_arr = np.array([np.sqrt(2.0) * rho0], dtype=float)
     V_at_rho0 = float(np.asarray(solver.U(rho0_arr)).flat[0])
     F_hom = V_space * V_at_rho0
     return F_config - F_hom

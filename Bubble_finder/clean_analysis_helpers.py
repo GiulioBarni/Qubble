@@ -383,9 +383,11 @@ def plot_seed_maps(
 ) -> Tuple[Any, Any]:
     """Figure with seed map and the two canonical slices."""
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.2))
-    im = axes[0].pcolormesh(tau, r, seed_map, shading="auto", cmap="viridis")
-    axes[0].set_xlabel(r"$\tau$")
-    axes[0].set_ylabel(r"$r$")
+    im = axes[0].pcolormesh(r, tau, seed_map.T, shading="auto", cmap="viridis")
+    axes[0].set_xlabel(r"$r$")
+    axes[0].set_ylabel(r"$\tau$")
+    # Display tau from 0 (top) to -beta/2 (bottom).
+    axes[0].set_ylim(float(np.max(tau)), float(np.min(tau)))
     axes[0].set_title(f"{title_prefix}: 2D seed")
     fig.colorbar(im, ax=axes[0], label=r"$\rho_{\mathrm{seed}}(r,\tau)$")
 
@@ -413,9 +415,11 @@ def plot_solution_maps(
 ) -> Tuple[Any, Any]:
     """Figure with final 2D solution map and main slices."""
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.2))
-    im = axes[0].pcolormesh(tau, r, rho_map, shading="auto", cmap="magma")
-    axes[0].set_xlabel(r"$\tau$")
-    axes[0].set_ylabel(r"$r$")
+    im = axes[0].pcolormesh(r, tau, rho_map.T, shading="auto", cmap="magma")
+    axes[0].set_xlabel(r"$r$")
+    axes[0].set_ylabel(r"$\tau$")
+    # Display tau from 0 (top) to -beta/2 (bottom).
+    axes[0].set_ylim(float(np.max(tau)), float(np.min(tau)))
     axes[0].set_title(f"{title_prefix}: final 2D solution")
     fig.colorbar(im, ax=axes[0], label=r"$\rho(r,\tau)$")
 

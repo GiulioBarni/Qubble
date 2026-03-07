@@ -80,9 +80,10 @@ def radial_window(r: np.ndarray, rmax: float, frac: float) -> np.ndarray:
     return w
 
 
-def _estimate_rho_hom_from_tail(phi: np.ndarray, phibar: np.ndarray, m: int = 8) -> float:
+def _estimate_phi_hom_from_tail(phi: np.ndarray, phibar: np.ndarray, m: int = 8) -> float:
     """
-    Robust tail estimate: average over last m points of sqrt(Re(phi*phibar)).
+    Robust tail estimate in solver units: average over last m points of
+    sqrt(max(Re(phi*phibar), 0)), i.e. |phi|.
     """
     phi = np.asarray(phi)
     phibar = np.asarray(phibar)
@@ -90,6 +91,43 @@ def _estimate_rho_hom_from_tail(phi: np.ndarray, phibar: np.ndarray, m: int = 8)
     u = (phi[-m:] * phibar[-m:]).real
     u = np.maximum(u, 0.0)
     return float(np.mean(np.sqrt(u)))
+
+
+def _estimate_rho_phys_hom_from_tail(phi: np.ndarray, phibar: np.ndarray, m: int = 8) -> float:
+    """
+    Robust tail estimate in physical-modulus units: average over last m points of
+    sqrt(2*max(Re(phi*phibar), 0)), i.e. rho_phys.
+    """
+    phi = np.asarray(phi)
+    phibar = np.asarray(phibar)
+    m = int(max(2, m))
+    u = (phi[-m:] * phibar[-m:]).real
+    u = np.maximum(u, 0.0)
+    return float(np.mean(np.sqrt(2.0 * u)))
+
+
+def _normalize_profile_to_phi_units(
+    phi: np.ndarray,
+    phibar: np.ndarray,
+    phi_ref: float,
+    m: int = 8,
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    Normalize a 1D profile into solver units |phi|.
+    Heuristic:
+      - if tail is closer to phi_ref, profile is already in |phi| (scale=1)
+      - else if tail is closer to sqrt(2)*phi_ref, profile is rho_phys (scale=1/sqrt(2))
+    """
+    phi = np.asarray(phi, dtype=float).copy()
+    phibar = np.asarray(phibar, dtype=float).copy()
+    if phi.size == 0:
+        return phi, phibar, 1.0
+    m = int(max(2, min(m, phi.size)))
+    tail_mean = float(np.mean(phi[-m:]))
+    d_phi = abs(tail_mean - float(phi_ref))
+    d_rho = abs(tail_mean - float(np.sqrt(2.0) * phi_ref))
+    scale = 1.0 if d_phi <= d_rho else 1.0 / np.sqrt(2.0)
+    return phi * scale, phibar * scale, float(scale)
 
 
 def _pack_real_vector(solver: Bubble2DSolver, y: np.ndarray, ybar: np.ndarray) -> np.ndarray:
@@ -143,6 +181,10 @@ class AnsatzParams:
 
     # NEW: allow turning off the cosine modulation (pure gate)
     use_cosine: bool = True
+    # NEW: add global twist-compatible background exp(±Δω τ)
+    include_twist_background: bool = True
+    # If True, gate the twist background by g_tau (default False: keep it global in τ)
+    twist_background_gated: bool = False
 
 
 # ---------------------------------------------------------------------
@@ -176,24 +218,84 @@ def make_bubble_profile_1d_from_solve_bounce(
     phi0: float,
     v1: float,
     v2: float,
+    *,
+    d: int = 3,
+    extend_to: Optional[float] = None,
+    rmax: Optional[float] = None,
+    n_grid_points: int = 2000,
 ) -> Callable[[float, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
     """
-    bubble_profile_1d(omega_tilde, r_grid) built by calling solve_bounce_fn(phi0,v1,v2,omega_tilde).
+    bubble_profile_1d(omega_tilde, r_grid) built by calling solve_bounce_fn(phi0,v1,v2,omega_tilde,...)
+    with explicit control of d / extend_to / rmax / n_grid_points.
     """
     from scipy.interpolate import interp1d
 
     def bubble_profile_1d(omega_tilde: float, r: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         r = np.asarray(r, dtype=float)
-        out = solve_bounce_fn(phi0, v1, v2, float(omega_tilde))
+        _rmax = float(rmax) if rmax is not None else float(max(np.max(r), 1.0))
+        try:
+            out = solve_bounce_fn(
+                phi0, v1, v2, float(omega_tilde),
+                d=int(d),
+                rmax=_rmax,
+                extend_to=extend_to,
+                n_grid_points=int(n_grid_points),
+            )
+        except TypeError:
+            out = solve_bounce_fn(phi0, v1, v2, float(omega_tilde))
+        except Exception:
+            out = (None, None, None, None, None)
+
+        if out is None or len(out) < 2 or out[0] is None or out[1] is None:
+            # Fallback homogeneous profile if 1D solve fails
+            phi = np.full_like(r, float(v1), dtype=float)
+            return phi.copy(), phi.copy()
+
         r_b, phi_b = np.asarray(out[0], dtype=float), np.asarray(out[1], dtype=float)
-        if r_b.size < 2:
-            phi = np.full_like(r, v1, dtype=float)
+        if r_b.size < 2 or phi_b.size < 2:
+            tail = float(phi_b[-1]) if phi_b.size else float(v1)
+            phi = np.full_like(r, tail, dtype=float)
             return phi.copy(), phi.copy()
         f = interp1d(r_b, phi_b, kind="linear", bounds_error=False, fill_value=(phi_b[0], phi_b[-1]))
         phi = np.asarray(f(r), dtype=float)
         return phi.copy(), phi.copy()
 
+    bubble_profile_1d.profile_d = int(d)
+    bubble_profile_1d.profile_extend_to = extend_to
     return bubble_profile_1d
+
+
+def make_bubble_profile_1d_for_solver(
+    solver: Bubble2DSolver,
+    solve_bounce_fn: Callable,
+    phi0: float,
+    v1: float,
+    v2: float,
+    *,
+    d: int,
+    alpha_tau: float = 1.0,
+    n_grid_points: int = 2000,
+) -> Callable[[float, np.ndarray], Tuple[np.ndarray, np.ndarray]]:
+    """
+    Build a 1D profile callable whose integration domain covers the full 2D seed radial variable:
+      S_max = sqrt(r_max^2 + (|tau_min|/alpha_tau)^2).
+    """
+    r = np.asarray(solver.grid.r, dtype=float).flatten()
+    tau = np.asarray(solver.grid.tau, dtype=float).flatten()
+    S_max = float(np.sqrt((float(r[-1]) ** 2) + (abs(float(tau[0])) / max(float(alpha_tau), 1e-12)) ** 2))
+    prof = make_bubble_profile_1d_from_solve_bounce(
+        solve_bounce_fn,
+        phi0,
+        v1,
+        v2,
+        d=int(d),
+        extend_to=S_max,
+        rmax=S_max,
+        n_grid_points=int(n_grid_points),
+    )
+    prof.profile_d = int(d)
+    prof.profile_S_max = S_max
+    return prof
 
 
 # ---------------------------------------------------------------------
@@ -254,9 +356,10 @@ def build_seed_bubble(
     neg_mode_override: Optional[Tuple[np.ndarray, float]] = None,  # (v_neg, lam)
     # Use reference solution to shape / center, optional:
     sol_ref: Optional[Bubble2DSolution] = None,
-    # Optional direct override of rho(r, tau) on the solver grid. If provided, we bypass
-    # the 1D bubble embedding and negative-mode kick and simply embed this rho_2d
-    # into y,ybar using the usual mapping y = r * (rho - rho_ref).
+    # Optional direct override on the solver grid. For backward compatibility the argument
+    # name is rho_override_2d, but the expected content is phi_amp_2d = |phi|(r,tau).
+    # If provided, we bypass the 1D bubble embedding and negative-mode kick and embed
+    # using y = r * (phi_amp - phi_ref).
     rho_override_2d: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
@@ -279,60 +382,78 @@ def build_seed_bubble(
     # Set the solver omega to omega_ref for stable rotated frame
     solver.omega = float(omega_ref)
 
-    # Homogeneous reference values
-    rho_ref = float(rho_ref_override) if rho_ref_override is not None else float(solver.rho0)
+    # Homogeneous reference in solver units |phi|
+    phi_ref = float(rho_ref_override) if rho_ref_override is not None else float(solver.rho0)
 
     # Fast path: if rho_override_2d is given, build y,ybar directly from it and skip
     # all τ-gating, background ramp and negative-mode logic. This is used for custom
     # 2D seeds like the O(4)-symmetric rho(s) construction.
     if rho_override_2d is not None:
-        rho_arr = np.asarray(rho_override_2d, dtype=float)
-        if rho_arr.shape == (solver.Nt, solver.Nr):
+        phi_arr = np.asarray(rho_override_2d, dtype=float)
+        if phi_arr.shape == (solver.Nt, solver.Nr):
             # convert to (Nr,Nt)
-            rho_arr = rho_arr.T.copy()
-        if rho_arr.shape != (solver.Nr, solver.Nt):
-            raise ValueError(f"rho_override_2d has shape {rho_arr.shape}, expected (Nr,Nt)=({solver.Nr},{solver.Nt})")
-        y_seed = (r[:, None] * (rho_arr - rho_ref)).astype(complex)
+            phi_arr = phi_arr.T.copy()
+        if phi_arr.shape != (solver.Nr, solver.Nt):
+            raise ValueError(f"rho_override_2d has shape {phi_arr.shape}, expected (Nr,Nt)=({solver.Nr},{solver.Nt})")
+        y_seed = (r[:, None] * (phi_arr - phi_ref)).astype(complex)
         ybar_seed = y_seed.copy()
         x0 = solver.pack(y_seed, ybar_seed)
         meta = dict(
             omega_ref=float(omega_ref),
             omega_tilde=float(omega_tilde),
-            rho_ref=float(rho_ref),
+            rho_ref=float(phi_ref),
             rho_tilde=None,
+            profile_scale_to_phi=1.0,
             params=dict(**params.__dict__),
             neg_mode_lambda=None,
-            note="Seed built from explicit rho_override_2d (no τ-gate / neg-mode logic).",
+            note="Seed built from explicit rho_override_2d interpreted as |phi| (no τ-gate / neg-mode logic).",
         )
         return x0, meta
 
     # 1D profile at omega_tilde (use override if provided to avoid repeated calls)
+    profile_scale_to_phi = 1.0
     if phi1d_override is not None:
         phi1d, phibar1d = phi1d_override[0], phi1d_override[1]
         phi1d = np.asarray(phi1d, dtype=float).copy()
         phibar1d = np.asarray(phibar1d, dtype=float).copy()
     else:
         phi1d, phibar1d = bubble_profile_1d(float(omega_tilde), r)
-        phi1d = np.asarray(phi1d, dtype=float).copy()
-        phibar1d = np.asarray(phibar1d, dtype=float).copy()
+        phi1d, phibar1d, profile_scale_to_phi = _normalize_profile_to_phi_units(
+            phi1d, phibar1d, phi_ref=phi_ref, m=8
+        )
 
-    # rho_tilde is the homogeneous background at τ=0 (tail of 1D bubble)
-    rho_tilde = float(rho_tilde_override) if rho_tilde_override is not None else _estimate_rho_hom_from_tail(phi1d, phibar1d, m=8)
+    # phi_tilde is the homogeneous background at tau=0 in solver units |phi|
+    phi_tilde = float(rho_tilde_override) if rho_tilde_override is not None else _estimate_phi_hom_from_tail(phi1d, phibar1d, m=8)
 
     # τ gate (bounce wants localized around τ=0 by default)
     g_tau = tau_gate(tau, T, params.tau_gate_frac, center_frac=params.tau_gate_center_frac)  # (Nt,)
 
     # Base bubble embedding in y variables:
-    # y = r*(phi_rot - rho_ref). For the localized bubble part we embed r*(phi1d - rho_tilde)
+    # y = r*(phi_rot - phi_ref). For the localized bubble part we embed r*(phi1d - phi_tilde)
     # and add background shift separately if requested.
-    y1d_loc = r * (phi1d - rho_tilde)
-    ybar1d_loc = r * (phibar1d - rho_tilde)
+    y1d_loc = r * (phi1d - phi_tilde)
+    ybar1d_loc = r * (phibar1d - phi_tilde)
 
-    # Background shift term:
-    # If we want rho_ref -> rho_tilde near the bubble, use gated shift (NOT global ramp).
-    # This avoids driving Newton to sphaleron-like τ-extended structures.
-    Y_bg = np.zeros((tau.size, r.size), dtype=float)
-    YB_bg = np.zeros_like(Y_bg)
+    # Background terms:
+    # 1) twist-compatible background in total fields:
+    #      phi_bg(τ)    = phi_ref * exp(+Δω τ)
+    #      phibar_bg(τ) = phi_ref * exp(-Δω τ)
+    #    mapped to y-space as r*(phi_bg - phi_ref), r*(phibar_bg - phi_ref).
+    # 2) optional affine tau-ramp shift (legacy control).
+    Y_bg = np.zeros((tau.size, r.size), dtype=float)   # for y
+    YB_bg = np.zeros_like(Y_bg)                        # for ybar
+
+    if params.include_twist_background:
+        delta_omega = float(omega_tilde) - float(omega_ref)
+        phi_bg_tau = float(phi_ref) * np.exp(delta_omega * tau)
+        phibar_bg_tau = float(phi_ref) * np.exp(-delta_omega * tau)
+        dphi_bg_tau = (phi_bg_tau - float(phi_ref))
+        dphibar_bg_tau = (phibar_bg_tau - float(phi_ref))
+        if params.twist_background_gated:
+            dphi_bg_tau = dphi_bg_tau * g_tau
+            dphibar_bg_tau = dphibar_bg_tau * g_tau
+        Y_bg += np.outer(dphi_bg_tau, r)
+        YB_bg += np.outer(dphibar_bg_tau, r)
 
     if params.include_tau_ramp:
         if params.ramp_gated:
@@ -344,10 +465,10 @@ def build_seed_bubble(
             h = (tau - tau.min()) / max(1e-12, (tau.max() - tau.min()))
             h = np.clip(h, 0.0, 1.0)
 
-        # In y = r*(phi - rho_ref): pure background shift is y_bg = r*(rho_bg - rho_ref)
-        # where rho_bg = rho_ref + h*(rho_tilde - rho_ref)
-        Y_bg = np.outer(h, r * (rho_tilde - rho_ref))
-        YB_bg = Y_bg.copy()
+        # In y = r*(phi - phi_ref): pure background shift is y_bg = r*(phi_bg - phi_ref)
+        # where phi_bg = phi_ref + h*(phi_tilde - phi_ref)
+        Y_bg += np.outer(h, r * (phi_tilde - phi_ref))
+        YB_bg += np.outer(h, r * (phi_tilde - phi_ref))
 
     # Bubble base (τ-localized)
     Y0 = Y_bg + params.amp * np.outer(g_tau, y1d_loc)
@@ -398,12 +519,15 @@ def build_seed_bubble(
     meta = dict(
         omega_ref=float(omega_ref),
         omega_tilde=float(omega_tilde),
-        rho_ref=float(rho_ref),
-        rho_tilde=float(rho_tilde),
+        rho_ref=float(phi_ref),
+        rho_tilde=float(phi_tilde),
+        profile_scale_to_phi=float(profile_scale_to_phi),
         params=dict(**params.__dict__),
         neg_mode_lambda=(float(lam_neg) if lam_neg is not None else None),
         note=(
-            "Bounce-oriented seed: τ-localized embedded 1D bubble (around rho_tilde) "
+            "Bounce-oriented seed in solver units |phi|: τ-localized embedded 1D bubble (around phi_tilde) "
+            + ("+ twist background exp(±Δω τ) " if params.include_twist_background and not params.twist_background_gated else "")
+            + ("+ gated twist background exp(±Δω τ) " if params.include_twist_background and params.twist_background_gated else "")
             + ("+ gated background shift " if params.include_tau_ramp and params.ramp_gated else "")
             + ("+ global τ ramp " if params.include_tau_ramp and not params.ramp_gated else "")
             + ("+ windowed kick(negmode)" if (params.eps != 0.0 and v_neg is not None) else "")
@@ -456,7 +580,7 @@ def print_seed_diagnostics(
     Cheap diagnostics for a single seed x0 (no assumption that F(x0)=0):
       - ||F(x0)||
       - Q(tau=0) ghost charge
-      - max|rho(r, tau≈0) - rho_hom| on the tau≈0 slice
+      - max|rho_phys(r, tau≈0) - rho_phys_tail| on the tau≈0 slice
     """
     x0 = np.asarray(x0)
     nF = float(np.linalg.norm(solver.residual(x0)))
@@ -466,15 +590,15 @@ def print_seed_diagnostics(
     # rho from phi,phibar to avoid relying on rho_map internals
     phi, phibar = solver.phi(y, ybar)
     u = (phi * phibar).real
-    rho = np.sqrt(np.maximum(u, 0.0))
+    rho = np.sqrt(2.0 * np.maximum(u, 0.0))
     r = np.asarray(solver.grid.r, dtype=float).flatten()
     tau = np.asarray(solver.grid.tau, dtype=float).flatten()
     idx_tau0 = int(np.argmin(np.abs(tau - 0.0)))
 
-    rho_tail = np.mean(rho[-max(4, rho.shape[0] // 8) :, idx_tau0])
-    max_dev = float(np.max(np.abs(rho[:, idx_tau0] - rho_tail)))
+    rho_phys_tail = np.mean(rho[-max(4, rho.shape[0] // 8) :, idx_tau0])
+    max_dev = float(np.max(np.abs(rho[:, idx_tau0] - rho_phys_tail)))
 
-    print(f"[{label}] ||F|| = {nF:.3e}, Q(tau=0) = {Q:.6g}, max|rho-rho_hom|(tau≈0) = {max_dev:.3e}")
+    print(f"[{label}] ||F|| = {nF:.3e}, Q(tau=0) = {Q:.6g}, max|rho_phys-rho_phys_tail|(tau≈0) = {max_dev:.3e}")
 
 
 def score_seed(
@@ -588,9 +712,10 @@ def rank_seeds(
     # Precompute 1D bubble profile once (same for all seeds)
     r_grid = np.asarray(solver.grid.r, dtype=float).flatten()
     _phi1d, _phibar1d = bubble_profile_1d(float(omega_tilde), r_grid)
-    _phi1d = np.asarray(_phi1d, dtype=float)
-    _phibar1d = np.asarray(_phibar1d, dtype=float)
-    _rho_tilde = float(_estimate_rho_hom_from_tail(_phi1d, _phibar1d, m=8))
+    _phi1d, _phibar1d, _ = _normalize_profile_to_phi_units(
+        _phi1d, _phibar1d, phi_ref=float(solver.rho0), m=8
+    )
+    _phi_tilde = float(_estimate_phi_hom_from_tail(_phi1d, _phibar1d, m=8))
     phi1d_override = (_phi1d, _phibar1d)
 
     # Build list of all param combinations
@@ -619,7 +744,7 @@ def rank_seeds(
             omega_tilde=float(omega_tilde),
             bubble_profile_1d=bubble_profile_1d,
             params=params,
-            rho_tilde_override=_rho_tilde,
+            rho_tilde_override=_phi_tilde,
             phi1d_override=phi1d_override,
             sol_ref=sol_ref_for_negmode if neg_mode_override is None else None,
             neg_mode_override=neg_mode_override,
@@ -739,13 +864,13 @@ def build_seed_O3_tau(
     # Build a nonnegative radial coordinate from tau so profile center is at tau≈0.
     s_tau = np.abs(tau)
     phi_tau, phibar_tau = bubble_profile_1d(float(omega_tilde), s_tau)
-    phi_tau = np.asarray(phi_tau, dtype=float)
-    phibar_tau = np.asarray(phibar_tau, dtype=float)
-    rho_tau = np.sqrt(np.maximum((phi_tau * phibar_tau).real, 0.0))
-    rho_hom = _estimate_rho_hom_from_tail(phi_tau, phibar_tau, m=8)
+    phi_tau, phibar_tau, _ = _normalize_profile_to_phi_units(
+        phi_tau, phibar_tau, phi_ref=float(solver.rho0), m=8
+    )
+    phi_hom = _estimate_phi_hom_from_tail(phi_tau, phibar_tau, m=8)
 
-    rho_tau_scaled = rho_hom + float(amp) * (rho_tau - rho_hom)
-    rho_2d = np.repeat(rho_tau_scaled[None, :], r.size, axis=0)  # (Nr,Nt)
+    phi_tau_scaled = phi_hom + float(amp) * (phi_tau - phi_hom)
+    phi_2d = np.repeat(phi_tau_scaled[None, :], r.size, axis=0)  # (Nr,Nt)
 
     params = AnsatzParams(
         eps=0.0,
@@ -765,8 +890,8 @@ def build_seed_O3_tau(
         omega_tilde=float(omega_tilde),
         bubble_profile_1d=bubble_profile_1d,
         params=params,
-        rho_tilde_override=rho_hom,
-        rho_override_2d=rho_2d,
+        rho_tilde_override=phi_hom,
+        rho_override_2d=phi_2d,
     )
     meta["note"] = "O(3)-tau seed: profile along tau, copied in r."
     return x0, meta
@@ -788,16 +913,16 @@ def build_seed_O3_r(
     r = np.asarray(solver.grid.r, dtype=float).flatten()
     tau = np.asarray(solver.grid.tau, dtype=float).flatten()
 
-    # 1D O(3) profile (depends only on r)
+    # 1D O(3) profile (depends only on r), normalized to solver units |phi|
     phi1d, phibar1d = bubble_profile_1d(float(omega_tilde), r)
-    phi1d = np.asarray(phi1d, dtype=float)
-    phibar1d = np.asarray(phibar1d, dtype=float)
-    rho1d = np.sqrt(np.maximum((phi1d * phibar1d).real, 0.0))
-    rho_hom = _estimate_rho_hom_from_tail(phi1d, phibar1d, m=8)
+    phi1d, phibar1d, _ = _normalize_profile_to_phi_units(
+        phi1d, phibar1d, phi_ref=float(solver.rho0), m=8
+    )
+    phi_hom = _estimate_phi_hom_from_tail(phi1d, phibar1d, m=8)
 
     # Strictly tau-independent: same radial profile on all tau slices
-    rho1d_scaled = rho_hom + float(amp) * (rho1d - rho_hom)
-    rho_2d = np.repeat(rho1d_scaled[:, None], tau.size, axis=1)
+    phi1d_scaled = phi_hom + float(amp) * (phi1d - phi_hom)
+    phi_2d = np.repeat(phi1d_scaled[:, None], tau.size, axis=1)
 
     # Dummy params for metadata consistency; rho_override_2d bypasses tau-gate/kick logic
     params = AnsatzParams(
@@ -812,15 +937,15 @@ def build_seed_O3_r(
         ramp_gated=False,
         use_cosine=False,
     )
-    return build_seed_bubble(
+    x0, meta = build_seed_bubble(
         solver,
         omega_ref=float(omega_ref),
         omega_tilde=float(omega_tilde),
         bubble_profile_1d=bubble_profile_1d,
         params=params,
-        rho_tilde_override=rho_hom,
+        rho_tilde_override=phi_hom,
         phi1d_override=(phi1d, phibar1d),
-        rho_override_2d=rho_2d,
+        rho_override_2d=phi_2d,
     )
 
 
@@ -862,12 +987,12 @@ def build_seed_O4_from_rho_of_s(
     tau_window_kind: str = "cosine",  # or "gauss"
 ):
     """
-    O(4)-like seed built from rho_1d(s) with s = sqrt(r^2 + (tau/alpha_tau)^2).
+    O(4)-like seed built from phi_1d(s) in solver units |phi|, with s = sqrt(r^2 + (tau/alpha_tau)^2).
 
     Guarantees:
-      - rho(r,0) = rho_1d(r)
-      - d_tau rho(r,0) = 0 (evenness in tau)
-      - localization in tau, r if rho_1d -> rho_hom for large r.
+      - phi(r,0) = phi_1d(r)
+      - d_tau phi(r,0) = 0 (evenness in tau)
+      - localization in tau, r if phi_1d -> phi_hom for large r.
 
     Optional:
       Multiply only the *deviation from background* by a τ-window w(τ) that goes to 0 near τ=-beta/2
@@ -878,32 +1003,31 @@ def build_seed_O4_from_rho_of_s(
     r = np.asarray(solver.grid.r, dtype=float).flatten()
     tau = np.asarray(solver.grid.tau, dtype=float).flatten()
 
-    # 1D profile (phi1d, phibar1d) and corresponding rho_1d
+    # 1D profile (phi1d, phibar1d), normalized to solver units |phi|
     phi1d, phibar1d = bubble_profile_1d(float(omega_tilde), r)
-    phi1d = np.asarray(phi1d, dtype=float)
-    phibar1d = np.asarray(phibar1d, dtype=float)
-    u1d = (phi1d * phibar1d).real
-    rho1d = np.sqrt(np.maximum(u1d, 0.0))
+    phi1d, phibar1d, _ = _normalize_profile_to_phi_units(
+        phi1d, phibar1d, phi_ref=float(solver.rho0), m=8
+    )
 
-    # Homogeneous tail rho_hom from 1D profile
-    rho_hom = _estimate_rho_hom_from_tail(phi1d, phibar1d, m=8)
+    # Homogeneous tail phi_hom from 1D profile
+    phi_hom = _estimate_phi_hom_from_tail(phi1d, phibar1d, m=8)
 
-    # Build rho(r, tau) = rho1d(s), s = sqrt(r^2 + (tau/alpha_tau)^2)
+    # Build phi(r, tau) = phi1d(s), s = sqrt(r^2 + (tau/alpha_tau)^2)
     R, T = np.meshgrid(r, tau, indexing="ij")  # (Nr,Nt)
     alpha_tau = float(alpha_tau)
     S = np.sqrt(R ** 2 + (T / max(alpha_tau, 1e-12)) ** 2)
 
-    # Interpolate rho1d(S) from rho1d(r)
+    # Interpolate phi1d(S) from phi1d(r)
     S_flat = S.ravel()
-    rho_2d = np.interp(
+    phi_2d = np.interp(
         S_flat,
         r,
-        rho1d,
-        left=rho1d[0],
-        right=rho1d[-1],
+        phi1d,
+        left=phi1d[0],
+        right=phi1d[-1],
     ).reshape(S.shape)
 
-    # Optional tau-window on the deviation from background
+    # Optional tau-window on the deviation from background (in |phi| units)
     if use_tau_window:
         beta = float(solver.settings.beta)
         T_half = 0.5 * beta
@@ -929,11 +1053,11 @@ def build_seed_O4_from_rho_of_s(
             else:
                 w_tau[i] = 0.0
         w_tau_2d = w_tau[None, :]
-        delta_rho = rho_2d - rho_hom
-        rho_2d = rho_hom + w_tau_2d * delta_rho
+        delta_phi = phi_2d - phi_hom
+        phi_2d = phi_hom + w_tau_2d * delta_phi
 
-    # Amplitude on the deviation from background (keeps far tail near rho_hom)
-    rho_2d = rho_hom + float(amp) * (rho_2d - rho_hom)
+    # Amplitude on the deviation from background (keeps far tail near phi_hom)
+    phi_2d = phi_hom + float(amp) * (phi_2d - phi_hom)
 
     # Use build_seed_bubble with rho_override_2d; params mostly irrelevant here
     params = AnsatzParams(
@@ -955,12 +1079,15 @@ def build_seed_O4_from_rho_of_s(
         bubble_profile_1d=bubble_profile_1d,
         params=params,
         rho_ref_override=None,
-        rho_tilde_override=rho_hom,
+        rho_tilde_override=phi_hom,
         phi1d_override=(phi1d, phibar1d),
         sol_ref=None,
         neg_mode_override=None,
-        rho_override_2d=rho_2d,
+        rho_override_2d=phi_2d,
     )
+    meta["profile_d"] = int(getattr(bubble_profile_1d, "profile_d", -1))
+    meta["S_max"] = float(np.max(S))
+    return x0, meta
 
 
 # ---------------------------------------------------------------------
@@ -990,7 +1117,7 @@ def slicewise_energies_simple(solver: Bubble2DSolver, sol: Bubble2DSolution) -> 
     tau_kin = (dphi_dt * dphibar_dt).real
     spatial = (dphi_dr * dphibar_dr).real
     s = (phi_t * phibar_t).real
-    V = solver.U(np.sqrt(np.maximum(s, 0.0)))
+    V = solver.U(np.sqrt(2.0 * np.maximum(s, 0.0)))
 
     pref = 4.0 * np.pi
     E_static = pref * np.trapz((spatial + V) * (r[None, :] ** 2), r, axis=1)
@@ -1103,6 +1230,7 @@ __all__ = [
     "SeedCandidate",
     "make_bubble_profile_1d_from_arrays",
     "make_bubble_profile_1d_from_solve_bounce",
+    "make_bubble_profile_1d_for_solver",
     "build_seed_bubble",
     "build_seed_O3_tau",
     "build_seed_O3_r",

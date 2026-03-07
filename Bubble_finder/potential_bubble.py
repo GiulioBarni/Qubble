@@ -165,7 +165,7 @@ def d2V_dphi2(phi, phi0, v1, v2):
 
 def Omega_phi(phi, phi0, v1, v2, omega):
     """
-    Grand potential: Ω(φ) = V(φ) - ω² φ² (consistent with 2D PDE: W(ρ²)=ω² ⇒ V'(ρ)=2ω²ρ).
+    Grand potential: Ω(φ) = V(φ) - 1/2 ω² φ².
 
     Parameters
     ----------
@@ -186,12 +186,13 @@ def Omega_phi(phi, phi0, v1, v2, omega):
         Grand potential value(s)
     """
     V = V_phi(phi, phi0, v1, v2)
-    return V - omega**2 * phi**2
+    return V - 0.5 * omega**2 * phi**2
 
 
 def dOmega_dphi(phi, phi0, v1, v2, omega):
     """
-    First derivative of grand potential: dΩ/dφ = dV/dφ - 2 ω² φ (Ω = V - ω² φ²).
+    First derivative of grand potential: dΩ/dφ = dV/dφ - ω² φ
+    (Ω = V - 1/2 ω² φ²).
 
     Parameters
     ----------
@@ -212,12 +213,13 @@ def dOmega_dphi(phi, phi0, v1, v2, omega):
         First derivative value(s)
     """
     dV = dV_dphi(phi, phi0, v1, v2)
-    return dV - 2.0 * omega**2 * phi
+    return dV - omega**2 * phi
 
 
 def d2Omega_dphi2(phi, phi0, v1, v2, omega):
     """
-    Second derivative of grand potential: d²Ω/dφ² = d²V/dφ² - 2 ω² (Ω = V - ω² φ²).
+    Second derivative of grand potential: d²Ω/dφ² = d²V/dφ² - ω²
+    (Ω = V - 1/2 ω² φ²).
 
     Parameters
     ----------
@@ -238,15 +240,16 @@ def d2Omega_dphi2(phi, phi0, v1, v2, omega):
         Second derivative value(s)
     """
     d2V = d2V_dphi2(phi, phi0, v1, v2)
-    return d2V - 2.0 * omega**2
+    return d2V - omega**2
 
 
 def W_of_s(s, phi0, v1, v2, omega):
     """
-    Potential derivative for use in 2D solver: W(s) = dΩ/dφ / (2*ρ) where s = ρ² = (φ φ̄).real
+    Potential derivative for use in 2D solver: W(s) = dΩ/dφ / (2*ρ)
+    where s = (φ φ̄).real = ρ²/2
 
     This is used in the 2D solver where we work with s = real(phi*phibar) instead of phi directly.
-    Uses the grand potential Ω(φ) = V(φ) - ω²φ².
+    Uses the grand potential Ω(φ) = V(φ) - 1/2 ω²φ².
 
     Parameters
     ----------
@@ -264,11 +267,11 @@ def W_of_s(s, phi0, v1, v2, omega):
     Returns
     -------
     float or array
-        W(s) = dOmega_dphi(ρ) / (2*ρ) where ρ = sqrt(s)
+        W(s) = dOmega_dphi(ρ) / (2*ρ) where ρ = sqrt(2*s)
     """
     # Ensure s is non-negative
     s = np.maximum(s, 0.0)
-    rho = np.sqrt(s)
+    rho = np.sqrt(2.0 * s)
     
     # Avoid division by zero (rho ~ O(1) typically, but guard anyway)
     mask = rho > 1e-10
@@ -290,7 +293,8 @@ def Wp_of_s(s, phi0, v1, v2, omega):
     """
     Derivative of W(s) with respect to s: Wp(s) = d/ds W(s)
 
-    Using chain rule: d/ds W(s) = d/dρ W(ρ²) * dρ/ds = [d²Ω/dφ²(ρ)*ρ - dΩ/dφ(ρ)] / (4*ρ³)
+    Using chain rule: d/ds W(s) = d/dρ W(s(ρ)) * dρ/ds
+    = [d²Ω/dφ²(ρ)*ρ - dΩ/dφ(ρ)] / (2*ρ³), with s = ρ²/2.
 
     Parameters
     ----------
@@ -312,7 +316,7 @@ def Wp_of_s(s, phi0, v1, v2, omega):
     """
     # Ensure s is non-negative
     s = np.maximum(s, 0.0)
-    rho = np.sqrt(s)
+    rho = np.sqrt(2.0 * s)
     
     # Avoid division by zero
     mask = rho > 1e-10
@@ -321,7 +325,7 @@ def Wp_of_s(s, phi0, v1, v2, omega):
     if np.any(mask):
         dOmega = dOmega_dphi(rho[mask], phi0, v1, v2, omega)
         d2Omega = d2Omega_dphi2(rho[mask], phi0, v1, v2, omega)
-        Wp[mask] = (d2Omega * rho[mask] - dOmega) / (4.0 * rho[mask] ** 3)
+        Wp[mask] = (d2Omega * rho[mask] - dOmega) / (2.0 * rho[mask] ** 3)
     
     # For rho ≈ 0, use expansion
     if np.any(~mask):
@@ -335,7 +339,8 @@ def Wp_of_s(s, phi0, v1, v2, omega):
 
 def V_W_of_s(s, phi0, v1, v2):
     """
-    Potential derivative for use in 2D solver: W(s) = dV/dφ / (2*ρ) where s = ρ² = (φ φ̄).real
+    Potential derivative for use in 2D solver: W(s) = dV/dφ / (2*ρ)
+    where s = (φ φ̄).real = ρ²/2
     
     This version uses V(φ) directly, NOT the grand potential Ω(φ).
     Use this when the operator already includes explicit ω terms (Q-ball style).
@@ -357,11 +362,11 @@ def V_W_of_s(s, phi0, v1, v2):
     Returns
     -------
     float or array
-        W(s) = dV_dphi(ρ) / (2*ρ) where ρ = sqrt(s)
+        W(s) = dV_dphi(ρ) / (2*ρ) where ρ = sqrt(2*s)
     """
     # Ensure s is non-negative
     s = np.maximum(s, 0.0)
-    rho = np.sqrt(s)
+    rho = np.sqrt(2.0 * s)
     
     # Avoid division by zero (rho ~ O(1) typically, but guard anyway)
     mask = rho > 1e-10
@@ -384,10 +389,10 @@ def V_Wp_of_s(s, phi0, v1, v2):
     Derivative of V_W_of_s(s) with respect to s: Wp(s) = d/ds W(s)
     
     IMPORTANT: This returns dW/ds (derivative with respect to s = phi*phibar),
-    NOT dW/drho (derivative with respect to rho = sqrt(s)).
+    NOT dW/drho (derivative with respect to rho = sqrt(2*s)).
 
-    Using chain rule: d/ds W(s) = d/dρ W(ρ²) * dρ/ds = [d²V/dφ²(ρ)*ρ - dV/dφ(ρ)] / (4*ρ³)
-    where dρ/ds = 1/(2*ρ) since s = ρ².
+    Using chain rule: d/ds W(s) = d/dρ W(s(ρ)) * dρ/ds
+    = [d²V/dφ²(ρ)*ρ - dV/dφ(ρ)] / (2*ρ³), with s = ρ²/2.
     
     This version uses V(φ) directly, NOT the grand potential Ω(φ).
     Use this when the operator already includes explicit ω terms (Q-ball style).
@@ -410,7 +415,7 @@ def V_Wp_of_s(s, phi0, v1, v2):
     """
     # Ensure s is non-negative
     s = np.maximum(s, 0.0)
-    rho = np.sqrt(s)
+    rho = np.sqrt(2.0 * s)
     
     # Avoid division by zero
     mask = rho > 1e-10
@@ -419,7 +424,7 @@ def V_Wp_of_s(s, phi0, v1, v2):
     if np.any(mask):
         dV = dV_dphi(rho[mask], phi0, v1, v2)
         d2V = d2V_dphi2(rho[mask], phi0, v1, v2)
-        Wp[mask] = (d2V * rho[mask] - dV) / (4.0 * rho[mask] ** 3)
+        Wp[mask] = (d2V * rho[mask] - dV) / (2.0 * rho[mask] ** 3)
     
     # For rho ≈ 0, use expansion
     if np.any(~mask):
@@ -434,9 +439,9 @@ def V_Wp_of_s(s, phi0, v1, v2):
 def vacua_of_Omega(phi0, v1, v2, omega, verbose=True,
                    *, ngrid=4000, bracket_frac=0.10, xtol=1e-12, distinct_tol=1e-6):
     """
-    Find the two local minima (vacua) of the grand potential Ω(φ) = V(φ) - ω² φ².
+    Find the two local minima (vacua) of the grand potential Ω(φ) = V(φ) - 1/2 ω² φ².
     Search range: [v1, v2 + delta] so the true vacuum can sit slightly above v2
-    when the -ω²φ² term shifts the minimum (no artificial clipping at v2).
+    when the -1/2 ω²φ² term shifts the minimum (no artificial clipping at v2).
 
     Strategy:
       1) Grid scan to locate local minima (including boundaries if lower than neighbours).
@@ -461,7 +466,7 @@ def vacua_of_Omega(phi0, v1, v2, omega, verbose=True,
     if omega < 0:
         raise ValueError("omega must be >= 0 (use omega^2 if you only need the square).")
 
-    # Allow true vacuum slightly above v2 (Ω minimum can shift right due to -ω²φ²)
+    # Allow true vacuum slightly above v2 (Ω minimum can shift right due to -1/2 ω²φ²)
     v2_max = v2 + 0.2
 
     # --- 1) Grid scan in [v1, v2_max]
@@ -544,20 +549,20 @@ def vacua_of_Omega(phi0, v1, v2, omega, verbose=True,
                 return float(d2V_dphi2(0.0, phi0, v1, v2) / 2.0)
             return float(dV_dphi(rho, phi0, v1, v2) / (2.0 * rho))
 
-        # dΩ/dφ = dV/dφ - 2 ω² φ (should be ~0 at interior minima)
+        # dΩ/dφ = dV/dφ - ω² φ (should be ~0 at interior minima)
         rF = float(dOmega_dphi(phi_false, phi0, v1, v2, omega))
         rT = float(dOmega_dphi(phi_true,  phi0, v1, v2, omega))
 
-        mF = float(omega**2 - W_at_rho(phi_false))
-        mT = float(omega**2 - W_at_rho(phi_true))
+        mF = float(omega**2 - 2.0 * W_at_rho(phi_false))
+        mT = float(omega**2 - 2.0 * W_at_rho(phi_true))
 
-        # Curvature: Ω = V - ω² φ²  =>  Ω'' = V'' - 2 ω²
-        cF = float(d2V_dphi2(phi_false, phi0, v1, v2) - 2.0 * omega**2)
-        cT = float(d2V_dphi2(phi_true,  phi0, v1, v2) - 2.0 * omega**2)
+        # Curvature: Ω = V - 1/2 ω² φ²  =>  Ω'' = V'' - ω²
+        cF = float(d2V_dphi2(phi_false, phi0, v1, v2) - omega**2)
+        cT = float(d2V_dphi2(phi_true,  phi0, v1, v2) - omega**2)
 
-        print(f"[vacua_of_Omega] ω={omega:.6g}")
-        print(f"  phi_false={phi_false:.12g}  Ω_false={Om_false:.12g}  dΩ={rF:.2e}  (ω²-W)={mF:.2e}  Ω''={cF:.3e}")
-        print(f"  phi_true ={phi_true :.12g}  Ω_true ={Om_true :.12g}  dΩ={rT:.2e}  (ω²-W)={mT:.2e}  Ω''={cT:.3e}")
+        print(f"[vacua_of_Omega] ω={omega:.6g}  (continuum W from V'(rho)/(2rho), no smooth_pos/rho_eps)")
+        print(f"  phi_false={phi_false:.12g}  Ω_false={Om_false:.12g}  dΩ={rF:.2e}  (ω²-2W)={mF:.2e}  Ω''={cF:.3e}")
+        print(f"  phi_true ={phi_true :.12g}  Ω_true ={Om_true :.12g}  dΩ={rT:.2e}  (ω²-2W)={mT:.2e}  Ω''={cT:.3e}")
 
     return phi_false, phi_true
 

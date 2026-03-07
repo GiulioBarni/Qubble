@@ -10,7 +10,7 @@ time-reflection symmetry.
 
 Reference: homogeneous charged configuration (metastable initial state).
   - Suppression exponent: F^{bounce}_{Q,β} = S_E[φ_b] - S_E[φ_hom] + η₀ Q.
-  - Homogeneous action: S_E[φ_hom] = β V_ball (V(ρ₀) − ω²ρ₀²), with V(s)=V(φφ̄) and s=ρ₀².
+  - Homogeneous action: S_E[φ_hom] = β V_ball (V(s0) − ω² s0), with s0=|φ|²=ρ₀²/2.
   - Activation exponent: F_act = β (E_crit − E_hom). Both E_crit and E_hom must be
     computed without background subtraction (raw energies).
 
@@ -261,7 +261,7 @@ def compute_homogeneous_action(
     """
     Euclidean action of the homogeneous reference configuration.
 
-    S_E[φ_hom] = β V_ball (V(ρ₀) − ω²ρ₀²), with s = ρ₀² so that V(ρ₀) = V_of_s(ρ₀²).
+    S_E[φ_hom] = β V_ball (V(s0) − ω² s0), with s0 = |φ|² = ρ₀²/2.
 
     Parameters
     ----------
@@ -314,7 +314,8 @@ def compute_suppression_exponent_bubble(
     S_bounce_full
         Full Euclidean action of the bounce (over (-β/2, β/2)).
     S_hom
-        Euclidean action of the homogeneous reference, S_E[φ_hom] = β V_ball (V(ρ₀)−ω²ρ₀²).
+        Euclidean action of the homogeneous reference, S_E[φ_hom] = β V_ball (V(s0)−ω² s0),
+        with s0=|φ|²=ρ₀²/2.
     eta0
         Twist parameter (from the fixed-Q saddle).
     Q
@@ -359,12 +360,12 @@ def compute_activation_exponent_bubble(
 
 def make_V_of_s_from_U(U: Callable[[np.ndarray], np.ndarray]) -> Callable[[np.ndarray], np.ndarray]:
     """
-    Build V_of_s(s) from U(ρ) with s = ρ² (so ρ = sqrt(s)).
+    Build V_of_s(s) from U(ρ) with s = |phi|² = ρ²/2 (so ρ = sqrt(2*s)).
 
-    V_of_s(s) = U(sqrt(max(s,0))). No shift to V(0)=0; apply at call site if needed.
+    V_of_s(s) = U(sqrt(2*max(s,0))). No shift to V(0)=0; apply at call site if needed.
     """
     def V_of_s(s: np.ndarray) -> np.ndarray:
         s = np.asarray(s, dtype=float)
-        rho = np.sqrt(np.maximum(s, 0.0))
+        rho = np.sqrt(2.0 * np.maximum(s, 0.0))
         return U(rho)
     return V_of_s

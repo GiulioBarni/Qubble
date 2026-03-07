@@ -1,5 +1,5 @@
 """
-1D O(3)-symmetric bounce solution for bubble nucleation.
+1D O(d)-symmetric bounce solution for bubble nucleation.
 
 Solves the radial equation φ'' + (d-1)/r φ' = dΩ/dφ with overshoot/undershoot
 bisection on φ(0). Uses vacua_of_Omega and dOmega_dphi from potential_bubble.
@@ -45,7 +45,7 @@ def solve_bounce(
         Potential parameters: phi0 (field value at center), v1 (false vacuum),
         v2 (true vacuum), omega (chemical potential)
     d : int
-        Spatial dimension (default 3 for O(3) symmetry)
+        Spatial dimension in O(d) reduction (default 3 for O(3), use 4 for O(4)-like radial 1D).
     r0, rmax : float
         Integration range
     max_iter : int
@@ -151,52 +151,94 @@ def solve_bounce(
             print("  Failed to find solution")
         return None, None, None, None, None
 
-    r_end = sol_best.t[-1]
+    # Final clean integration at phi0_best with absolute false-vacuum event.
+    tol_event = 1e-8
+
+    def event_phi_false_abs(r, y):
+        return abs(y[0] - phi_false) - tol_event
+
+    event_phi_false_abs.terminal = True
+    event_phi_false_abs.direction = 0
+
+    def event_dphi_zero_final(r, y):
+        return y[1] if r > 10 * r0 else 1.0
+
+    event_dphi_zero_final.terminal = True
+    event_dphi_zero_final.direction = 1
+
+    sol_final = solve_ivp(
+        fun=lambda r, y: [
+            y[1],
+            -(d - 1) / r * y[1] + dOmega_dphi(y[0], phi0, v1, v2, omega),
+        ],
+        t_span=(r0, rmax),
+        y0=[float(phi0_best), 0.0],
+        method="BDF",
+        events=[event_phi_false_abs, event_dphi_zero_final],
+        dense_output=True,
+        max_step=np.inf,
+        atol=1e-8,
+        rtol=1e-8,
+    )
+
+    if not sol_final.success:
+        # fallback to last best integration
+        sol_final = sol_best
+
+    t_phi_abs = sol_final.t_events[0][0] if sol_final.t_events[0].size > 0 else np.inf
+    t_dphi_zero = sol_final.t_events[1][0] if sol_final.t_events[1].size > 0 else np.inf
+    r_end = float(min(t_phi_abs, t_dphi_zero, sol_final.t[-1]))
+
     r_grid = np.linspace(r0, r_end, n_grid_points)
-    phi_grid = sol_best.sol(r_grid)[0]
+    phi_grid = sol_final.sol(r_grid)[0]
 
+    # Snap endpoint exactly to false vacuum if we reached (or nearly reached) it.
+    if np.isfinite(t_phi_abs) or abs(phi_grid[-1] - phi_false) < 1e-6:
+        phi_grid[-1] = phi_false
+
+    # Extend with constant false vacuum tail if requested.
     if extend_to is not None and extend_to > r_end:
-        phi_end_val = sol_best.y[0, -1]
-        dphi_end_val = sol_best.y[1, -1]
-
-        sol_extend = solve_ivp(
-            fun=lambda r, y: [
-                y[1],
-                -(d - 1) / r * y[1] + dOmega_dphi(y[0], phi0, v1, v2, omega),
-            ],
-            t_span=(r_end, extend_to),
-            y0=[phi_end_val, dphi_end_val],
-            method="BDF",
-            dense_output=True,
-            max_step=np.inf,
-            atol=1e-8,
-            rtol=1e-8,
-        )
-
-        if sol_extend.success:
-            n_extend = int(n_grid_points * (extend_to - r_end) / (r_end - r0))
-            n_extend = max(200, min(n_extend, 1000))
-            r_extend = np.linspace(r_end, extend_to, n_extend)
-            phi_extend = sol_extend.sol(r_extend)[0]
-            r_grid = np.concatenate([r_grid, r_extend[1:]])
-            phi_grid = np.concatenate([phi_grid, phi_extend[1:]])
-        else:
-            if verbose:
-                print("  Warning: Extension integration failed, using constant phi_false")
-            n_extend = int(n_grid_points * (extend_to - r_end) / (r_end - r0))
-            n_extend = max(200, min(n_extend, 1000))
-            r_extend = np.linspace(r_end, extend_to, n_extend)
-            phi_extend = np.full_like(r_extend, phi_false)
-            r_grid = np.concatenate([r_grid, r_extend[1:]])
-            phi_grid = np.concatenate([phi_grid, phi_extend[1:]])
+        n_extend = int(n_grid_points * (extend_to - r_end) / max(r_end - r0, 1e-12))
+        n_extend = max(200, min(n_extend, 1000))
+        r_extend = np.linspace(r_end, extend_to, n_extend)
+        phi_extend = np.full_like(r_extend, phi_false)
+        r_grid = np.concatenate([r_grid, r_extend[1:]])
+        phi_grid = np.concatenate([phi_grid, phi_extend[1:]])
+    else:
+        # Ensure last point is exactly the false vacuum for downstream interpolation stability.
+        phi_grid[-1] = phi_false
 
     phi0_final = float(phi0_best) if phi0_best is not None else float(phi0)
     return r_grid, phi_grid, phi0_final, phi_false, phi_true
 
 
+def solve_bounce_O3(
+    phi0: float,
+    v1: float,
+    v2: float,
+    omega: float,
+    **kwargs,
+):
+    """Convenience wrapper for O(3): solve_bounce(..., d=3, ...)."""
+    return solve_bounce(phi0, v1, v2, omega, d=3, **kwargs)
+
+
+def solve_bounce_O4(
+    phi0: float,
+    v1: float,
+    v2: float,
+    omega: float,
+    **kwargs,
+):
+    """Convenience wrapper for O(4): solve_bounce(..., d=4, ...)."""
+    return solve_bounce(phi0, v1, v2, omega, d=4, **kwargs)
+
+
 # Re-export 1D observables from central module (bounce_1d remains the notebook entry point)
 __all__ = [
     "solve_bounce",
+    "solve_bounce_O3",
+    "solve_bounce_O4",
     "compute_energy",
     "compute_charge",
     "compute_energy_density",

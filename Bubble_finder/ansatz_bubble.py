@@ -805,24 +805,41 @@ def build_twisted_seed_from_static(
 
 
 # ---------------------------------------------------------------------
-# Negative mode from 1D bounce (centralized for notebooks)
+# Robust negative mode from 1D bounce (centralized for notebooks)
 # ---------------------------------------------------------------------
+
+from dataclasses import dataclass
+from typing import Callable, Optional, Tuple, Any
+import warnings
+import numpy as np
+
 
 @dataclass
 class NegativeModeResult:
-    """Result of compute_negative_mode_from_bounce: gamma, eigenmode, Dp scan."""
+    """Robust result of compute_negative_mode_from_bounce."""
     gamma: float
     r: np.ndarray
     xi_y: np.ndarray
     xi_ybar: np.ndarray
     lam_neg: float
     beta_natural: float
+
     gamma_grid: np.ndarray
     Dp_vals: np.ndarray
 
+    # extra diagnostics
+    bracket: Optional[Tuple[float, float]]
+    gamma_refined: float
+    Dp_at_gamma: float
+    grid_is_uniform: bool
+    dr_min: float
+    dr_max: float
+    n_points_used: int
+    n_sign_changes: int
+    message: str
+
     @property
     def xi(self) -> np.ndarray:
-        """Alias for xi_y (for notebook compatibility)."""
         return self.xi_y
 
 
@@ -836,22 +853,168 @@ def prepare_negative_mode_region(
     *,
     r_min: float = 0.0,
     r_max: Optional[float] = None,
+    drop_points_near_origin: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, Any, float, float]:
     """
-    Build (r, phi_slice, potential_1d, dr, phi_false) for negative-mode or Dp diagnostic.
-    Used when compute_negative_mode_from_bounce fails with "Could not bracket".
+    Build (r, phi_slice, potential_1d, dr, phi_false) for negative-mode diagnostics.
+    More robust than the old version:
+      - can drop a few points near r=0
+      - checks basic grid properties
     """
     r_full = np.asarray(r_bounce, dtype=float)
     phi_full = np.asarray(phi_bounce, dtype=float)
-    mask = r_full >= r_min
+
+    mask = (r_full >= r_min)
     if r_max is not None:
-        mask = mask & (r_full <= r_max)
-    r = r_full[mask]
-    phi_slice = phi_full[mask]
-    dr = float(r[1] - r[0]) if len(r) > 1 else 0.01
+        mask &= (r_full <= r_max)
+
+    r = r_full[mask].copy()
+    phi_slice = phi_full[mask].copy()
+
+    if drop_points_near_origin > 0:
+        if len(r) <= drop_points_near_origin + 3:
+            raise RuntimeError(
+                "Negative mode: too few points left after drop_points_near_origin."
+            )
+        r = r[drop_points_near_origin:].copy()
+        phi_slice = phi_slice[drop_points_near_origin:].copy()
+
+    if len(r) < 4:
+        raise RuntimeError(
+            "Negative mode: need at least 4 points in selected range."
+        )
+
+    drs = np.diff(r)
+    dr = float(np.median(drs))
     phi_false = float(phi_false_bounce)
     potential_1d = PotentialModel(U, dU, d2U)
+
     return r, phi_slice, potential_1d, dr, phi_false
+
+
+def _check_r_grid(r: np.ndarray, *, tol_rel: float = 1e-6) -> Tuple[bool, float, float, float]:
+    """
+    Check whether the radial grid is approximately uniform.
+    Returns:
+      grid_is_uniform, dr_min, dr_max, rel_spread
+    """
+    r = np.asarray(r, dtype=float)
+    if len(r) < 3:
+        return True, np.nan, np.nan, 0.0
+
+    drs = np.diff(r)
+    dr_min = float(np.min(drs))
+    dr_max = float(np.max(drs))
+    dr_med = float(np.median(drs))
+    rel_spread = 0.0 if dr_med == 0 else float(np.max(np.abs(drs - dr_med)) / abs(dr_med))
+    grid_is_uniform = (rel_spread < tol_rel)
+    return grid_is_uniform, dr_min, dr_max, rel_spread
+
+
+def _build_y1d_from_phi(
+    r: np.ndarray,
+    phi_slice: np.ndarray,
+    phi_false: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Build y1d = r*(phi-phi_false), ybar1d similarly.
+    Keeps compatibility with existing compute_negative_mode_1d interface.
+    """
+    r = np.asarray(r, dtype=float)
+    phi_slice = np.asarray(phi_slice, dtype=float)
+
+    y1d = np.zeros_like(r, dtype=float)
+    ybar1d = np.zeros_like(r, dtype=float)
+
+    # If the first point is exactly r=0, enforce regularity there.
+    if abs(r[0]) < 1e-14:
+        y1d[0] = 0.0
+        ybar1d[0] = 0.0
+        y1d[1:] = r[1:] * (phi_slice[1:] - phi_false)
+        ybar1d[1:] = r[1:] * (phi_slice[1:] - phi_false)
+    else:
+        y1d[:] = r[:] * (phi_slice[:] - phi_false)
+        ybar1d[:] = r[:] * (phi_slice[:] - phi_false)
+
+    return y1d, ybar1d
+
+
+def _find_sign_change_brackets(
+    gamma_grid: np.ndarray,
+    Dp_vals: np.ndarray,
+) -> list:
+    """
+    Find all sign-change brackets in Dp(gamma).
+    Returns a list of dicts with:
+      i, gL, gR, DL, DR, score
+    where score = |DL| + |DR| (smaller is typically better).
+    """
+    gamma_grid = np.asarray(gamma_grid, dtype=float)
+    Dp_vals = np.asarray(Dp_vals, dtype=float)
+
+    brackets = []
+    for i in range(len(gamma_grid) - 1):
+        DL = Dp_vals[i]
+        DR = Dp_vals[i + 1]
+        gL = gamma_grid[i]
+        gR = gamma_grid[i + 1]
+
+        if not (np.isfinite(DL) and np.isfinite(DR)):
+            continue
+
+        # exact zero at endpoint
+        if DL == 0.0:
+            brackets.append(
+                dict(i=i, gL=float(gL), gR=float(gL), DL=float(DL), DR=float(DL), score=0.0)
+            )
+            continue
+
+        if np.sign(DL) != np.sign(DR):
+            score = abs(DL) + abs(DR)
+            brackets.append(
+                dict(i=i, gL=float(gL), gR=float(gR), DL=float(DL), DR=float(DR), score=float(score))
+            )
+
+    brackets.sort(key=lambda x: x["score"])
+    return brackets
+
+
+def _refine_gamma_from_scan_linear_zero(
+    gamma_grid: np.ndarray,
+    Dp_vals: np.ndarray,
+    bracket: Optional[Tuple[float, float]],
+) -> float:
+    """
+    Cheap refinement from the scan alone:
+      - if sign change bracket exists, linearly interpolate the zero
+      - otherwise return NaN
+    """
+    if bracket is None:
+        return float(np.nan)
+
+    gamma_grid = np.asarray(gamma_grid, dtype=float)
+    Dp_vals = np.asarray(Dp_vals, dtype=float)
+
+    gL, gR = bracket
+    idx = np.where((gamma_grid >= gL - 1e-15) & (gamma_grid <= gR + 1e-15))[0]
+
+    if len(idx) == 1:
+        return float(gamma_grid[idx[0]])
+    if len(idx) < 2:
+        return float(np.nan)
+
+    i0, i1 = idx[0], idx[-1]
+    x0, x1 = gamma_grid[i0], gamma_grid[i1]
+    y0, y1 = Dp_vals[i0], Dp_vals[i1]
+
+    if not (np.isfinite(y0) and np.isfinite(y1)):
+        return float(np.nan)
+
+    if abs(y1 - y0) < 1e-300:
+        return float(0.5 * (x0 + x1))
+
+    # linear interpolation of zero
+    return float(x0 - y0 * (x1 - x0) / (y1 - y0))
 
 
 def compute_negative_mode_from_bounce(
@@ -865,69 +1028,101 @@ def compute_negative_mode_from_bounce(
     *,
     r_min: float = 0.0,
     r_max: Optional[float] = None,
+    drop_points_near_origin: int = 0,
     gamma_scan_neg: Tuple[float, float] = (0.01, 5.0),
-    n_scan_neg: int = 80,
+    n_scan_neg: int = 120,
     gamma_scan_dp: Tuple[float, float] = (0.01, 10.0),
-    n_scan_dp: int = 80,
+    n_scan_dp: int = 240,
     sign_convention: int = 1,
+    grid_uniform_tol_rel: float = 1e-6,
+    warn_if_origin_dominates: bool = True,
 ):
     """
-    Compute the negative mode around the 1D critical bubble and optional Dp(γ) scan.
+    Robust computation of the negative mode around the 1D critical bubble.
 
-    Uses the same potential interface as the 2D solver (U, dU, d2U on ρ). Builds
-    (r, phi_slice), y1d = r*(phi - phi_false), PotentialModel(U, dU, d2U), then
-    compute_negative_mode_1d and compute_Dp_shooting_1d.
-
-    Returns
-    -------
-    NegativeModeResult
-        .gamma, .r, .xi_y, .xi_ybar, .lam_neg, .beta_natural, .gamma_grid, .Dp_vals
-
-    Raises
-    ------
-    RuntimeError
-        If fewer than 4 points in [r_min, r_max] or if compute_negative_mode_1d
-        fails (e.g. "Could not bracket"). Caller can catch and run Dp diagnostic.
+    Improvements over the old version:
+      - grid check
+      - optional removal of first few points near r=0
+      - full D_p scan diagnostic
+      - search over all sign-change brackets
+      - refined gamma estimate from best bracket
+      - clearer diagnostics in returned object
     """
     r_full = np.asarray(r_bounce, dtype=float)
     phi_full = np.asarray(phi_bounce, dtype=float)
-    mask = r_full >= r_min
+
+    mask = (r_full >= r_min)
     if r_max is not None:
-        mask = mask & (r_full <= r_max)
-    r = r_full[mask]
-    phi_slice = phi_full[mask]
+        mask &= (r_full <= r_max)
+
+    r = r_full[mask].copy()
+    phi_slice = phi_full[mask].copy()
+
+    if drop_points_near_origin > 0:
+        if len(r) <= drop_points_near_origin + 3:
+            raise RuntimeError(
+                "Negative mode: too few points left after drop_points_near_origin."
+            )
+        r = r[drop_points_near_origin:].copy()
+        phi_slice = phi_slice[drop_points_near_origin:].copy()
 
     if len(r) < 4:
         raise RuntimeError(
-            "Negative mode: need at least 4 points in range; widen r_min / r_max."
+            "Negative mode: need at least 4 points in range; widen r_min/r_max or drop fewer points."
         )
 
-    dr = float(r[1] - r[0]) if len(r) > 1 else 0.01
-    phi_false = float(phi_false_bounce)
-    y1d = np.zeros_like(r, float)
-    ybar1d = np.zeros_like(r, float)
-    y1d[0] = 0.0
-    ybar1d[0] = 0.0
-    y1d[1:] = r[1:] * (phi_slice[1:] - phi_false)
-    ybar1d[1:] = r[1:] * (phi_slice[1:] - phi_false)
-
-    potential_1d = PotentialModel(U, dU, d2U)
-    xi_y, xi_ybar, lam_neg = compute_negative_mode_1d(
-        r=r,
-        dr=dr,
-        phi_false=phi_false,
-        potential=potential_1d,
-        y1d=y1d,
-        ybar1d=ybar1d,
-        omega=float(omega),
-        sign_convention=sign_convention,
-        gamma_scan=gamma_scan_neg,
-        n_scan=n_scan_neg,
+    grid_is_uniform, dr_min, dr_max, rel_spread = _check_r_grid(
+        r, tol_rel=grid_uniform_tol_rel
     )
+    if not grid_is_uniform:
+        warnings.warn(
+            f"Negative mode: r-grid is not uniform enough for dr-based routines. "
+            f"dr_min={dr_min:.6e}, dr_max={dr_max:.6e}, rel_spread={rel_spread:.3e}. "
+            f"Proceeding with dr = median(diff(r)).",
+            UserWarning,
+            stacklevel=2,
+        )
 
-    gamma = np.sqrt(-lam_neg) if lam_neg < 0 else np.nan
-    beta_natural = (2.0 * np.pi / gamma) if (gamma > 0 and np.isfinite(gamma)) else np.nan
+    dr = float(np.median(np.diff(r)))
+    phi_false = float(phi_false_bounce)
+    potential_1d = PotentialModel(U, dU, d2U)
+    y1d, ybar1d = _build_y1d_from_phi(r, phi_slice, phi_false)
 
+    # First: try the actual negative-mode routine
+    lam_neg = np.nan
+    xi_y = np.zeros_like(r, dtype=float)
+    xi_ybar = np.zeros_like(r, dtype=float)
+    gamma_from_lambda = np.nan
+    beta_natural = np.nan
+    main_message = "ok"
+
+    try:
+        xi_y, xi_ybar, lam_neg = compute_negative_mode_1d(
+            r=r,
+            dr=dr,
+            phi_false=phi_false,
+            potential=potential_1d,
+            y1d=y1d,
+            ybar1d=ybar1d,
+            omega=float(omega),
+            sign_convention=sign_convention,
+            gamma_scan=gamma_scan_neg,
+            n_scan=n_scan_neg,
+        )
+        gamma_from_lambda = np.sqrt(-lam_neg) if (np.isfinite(lam_neg) and lam_neg < 0.0) else np.nan
+        beta_natural = (2.0 * np.pi / gamma_from_lambda) if (np.isfinite(gamma_from_lambda) and gamma_from_lambda > 0) else np.nan
+    except RuntimeError as e:
+        main_message = str(e)
+        if "Could not bracket" not in str(e):
+            raise
+        warnings.warn(
+            "Negative mode: compute_negative_mode_1d could not bracket the root in gamma_scan_neg. "
+            "Running full D_p diagnostic scan anyway.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # Then always do a diagnostic D_p scan for verification / plotting
     result_dp = compute_Dp_shooting_1d(
         r=r,
         phi=phi_slice,
@@ -937,92 +1132,173 @@ def compute_negative_mode_from_bounce(
         gamma_scan=gamma_scan_dp,
         n_scan=n_scan_dp,
         sign_convention=sign_convention,
+        require_bracket=False,
     )
 
+    gamma_grid = np.asarray(result_dp["gamma_grid"], dtype=float)
+    Dp_vals = np.asarray(result_dp["Dp_vals"], dtype=float)
+
+    brackets = _find_sign_change_brackets(gamma_grid, Dp_vals)
+    n_sign_changes = len(brackets)
+
+    best_bracket = None
+    gamma_refined = np.nan
+    Dp_at_gamma = np.nan
+
+    if n_sign_changes > 0:
+        best_bracket = (brackets[0]["gL"], brackets[0]["gR"])
+        gamma_refined = _refine_gamma_from_scan_linear_zero(
+            gamma_grid, Dp_vals, best_bracket
+        )
+
+        if np.isfinite(gamma_refined):
+            try:
+                # local interpolation only as a diagnostic
+                Dp_at_gamma = float(np.interp(gamma_refined, gamma_grid, Dp_vals))
+            except Exception:
+                Dp_at_gamma = np.nan
+
+    # Prefer the gamma coming from lambda if available, otherwise the refined gamma from D_p scan
+    if np.isfinite(gamma_from_lambda):
+        gamma_final = float(gamma_from_lambda)
+        lam_final = float(lam_neg)
+        beta_final = float(beta_natural)
+    elif np.isfinite(gamma_refined):
+        gamma_final = float(gamma_refined)
+        lam_final = float(-gamma_refined**2)
+        beta_final = float(2.0 * np.pi / gamma_refined) if gamma_refined > 0 else np.nan
+    else:
+        gamma_final = np.nan
+        lam_final = np.nan
+        beta_final = np.nan
+
+    # extra warning if mode is suspiciously concentrated at the origin
+    if warn_if_origin_dominates and np.any(np.isfinite(xi_y)):
+        norm = np.max(np.abs(xi_y)) if len(xi_y) > 0 else 0.0
+        if norm > 0:
+            frac0 = abs(xi_y[0]) / norm
+            frac1 = abs(xi_y[1]) / norm if len(xi_y) > 1 else np.nan
+            if frac0 > 0.95 and np.nanmax(np.abs(xi_y[1:])) < 0.1 * abs(xi_y[0]):
+                warnings.warn(
+                    "Negative mode appears strongly localized at the first grid point. "
+                    "This is often a sign of origin/boundary discretization instability. "
+                    "Try drop_points_near_origin=1 or 2 as a diagnostic.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
     return NegativeModeResult(
-        gamma=float(gamma),
+        gamma=float(gamma_final),
         r=np.asarray(r, dtype=float),
         xi_y=np.asarray(xi_y, dtype=float),
         xi_ybar=np.asarray(xi_ybar, dtype=float),
-        lam_neg=float(lam_neg),
-        beta_natural=float(beta_natural),
-        gamma_grid=result_dp["gamma_grid"],
-        Dp_vals=result_dp["Dp_vals"],
+        lam_neg=float(lam_final),
+        beta_natural=float(beta_final),
+        gamma_grid=gamma_grid,
+        Dp_vals=Dp_vals,
+        bracket=best_bracket,
+        gamma_refined=float(gamma_refined),
+        Dp_at_gamma=float(Dp_at_gamma),
+        grid_is_uniform=bool(grid_is_uniform),
+        dr_min=float(dr_min),
+        dr_max=float(dr_max),
+        n_points_used=int(len(r)),
+        n_sign_changes=int(n_sign_changes),
+        message=str(main_message),
     )
 
 
 def plot_Dp_shooting_verification(
     unstable_mode: Any,
     *,
+    gamma_xlim: Optional[Tuple[float, float]] = None,
     show_plot: bool = True,
+    show_signed_panel: bool = True,
 ) -> None:
     """
-    Plot D_p(γ) shooting curve and print verification (bracket, D_p at γ).
-    Expects unstable_mode to have .gamma, .gamma_grid, .Dp_vals (e.g. NegativeModeResult).
-    If gamma_grid/Dp_vals are missing, falls back to a simple gamma bar plot.
+    Robust D_p verification plot.
+
+    Shows:
+      - D_p(gamma) with sign
+      - log10|D_p(gamma)|
+
+    Reads diagnostics from NegativeModeResult if available.
     """
     import matplotlib.pyplot as plt
-    from scipy.interpolate import interp1d
 
     if unstable_mode is None:
-        print("Error: Negative mode not computed. Please run the previous cell first.")
+        print("Error: Negative mode not computed.")
         return
 
-    gamma_grid = getattr(unstable_mode, "gamma_grid", None)
-    Dp_vals = getattr(unstable_mode, "Dp_vals", None)
-    gamma = getattr(unstable_mode, "gamma", None)
+    gg = getattr(unstable_mode, "gamma_grid", None)
+    Dp = getattr(unstable_mode, "Dp_vals", None)
+    gamma = getattr(unstable_mode, "gamma", np.nan)
+    gamma_refined = getattr(unstable_mode, "gamma_refined", np.nan)
+    bracket = getattr(unstable_mode, "bracket", None)
+    Dp_at_gamma = getattr(unstable_mode, "Dp_at_gamma", np.nan)
 
-    if gamma_grid is not None and Dp_vals is not None and len(gamma_grid) > 0:
-        bracket = None
-        for i in range(len(gamma_grid) - 1):
-            if np.sign(Dp_vals[i]) != np.sign(Dp_vals[i + 1]):
-                bracket = (float(gamma_grid[i]), float(gamma_grid[i + 1]))
-                break
+    if gg is None or Dp is None or len(gg) == 0:
+        print("No D_p scan available.")
+        return
 
-        if show_plot:
-            plt.figure(figsize=(7, 5))
-            plt.plot(gamma_grid, np.log10(np.abs(Dp_vals) + 1e-300), "-o", lw=1.5, ms=4)
-            plt.axhline(0, color="k", lw=0.8)
-            if gamma is not None and np.isfinite(gamma):
-                plt.axvline(gamma, color="r", ls="--", lw=1.5, label=rf"$\gamma_{{found}} = {gamma:.6f}$", alpha=0.7)
-            if bracket is not None:
-                plt.axvspan(bracket[0], bracket[1], color="orange", alpha=0.2, label="Sign change interval")
-            plt.xlabel(r"$\gamma$")
-            plt.ylabel(r"$\log_{10}|D_p|$")
-            plt.title(r"Shooting function $D_p(\gamma)$")
-            plt.xlim(float(np.min(gamma_grid)), float(np.max(gamma_grid)))
-            plt.grid(True, alpha=0.4)
-            plt.legend()
-            plt.tight_layout()
-            plt.show()
+    gg = np.asarray(gg, dtype=float)
+    Dp = np.asarray(Dp, dtype=float)
 
-        print("\nShooting function verification:")
-        if gamma is not None and np.isfinite(gamma):
-            print(f"  Found γ = {gamma:.6f}")
-        if bracket is not None:
-            print(f"  Sign change bracket: [{bracket[0]:.6f}, {bracket[1]:.6f}]")
-            if gamma is not None and np.isfinite(gamma):
-                print(f"  γ is within bracket: {bracket[0] <= gamma <= bracket[1]}")
-        if len(gamma_grid) > 0 and gamma is not None and np.isfinite(gamma):
-            Dp_interp = interp1d(gamma_grid, Dp_vals, kind="linear", bounds_error=False, fill_value=np.nan)
-            Dp_at_gamma = float(Dp_interp(gamma))
-            print(f"  D_p(γ_found) ≈ {Dp_at_gamma:.6e}")
-            print(f"  |D_p(γ_found)| < 1e-3: {abs(Dp_at_gamma) < 1e-3}")
-    else:
-        if gamma is not None and np.isfinite(gamma) and show_plot:
-            fig, ax = plt.subplots(1, 1, figsize=(6, 4))
-            ax.bar([0], [gamma], color="steelblue", edgecolor="k", width=0.5)
-            ax.axhline(gamma, color="r", ls="--", lw=1.5, alpha=0.7, label=rf"$\gamma = {gamma:.6f}$")
-            ax.set_ylabel(r"$\gamma = \sqrt{-\lambda}$")
-            ax.set_title(rf"Negative mode: $\gamma$ = {gamma:.6f} (from eigenvalue $\lambda$)")
-            ax.set_xticks([])
-            ax.legend()
-            ax.grid(True, axis="y", alpha=0.4)
-            plt.tight_layout()
-            plt.show()
-            print(f"\nDiagnostic: gamma = sqrt(-lambda) = {gamma:.6f}")
+    if show_plot:
+        if show_signed_panel:
+            fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+            ax0, ax1 = axes
         else:
-            print("Shooting function not computed; gamma not available.")
+            fig, ax1 = plt.subplots(1, 1, figsize=(7, 5))
+            ax0 = None
+
+        if ax0 is not None:
+            ax0.plot(gg, Dp, "-o", lw=1.5, ms=4)
+            ax0.axhline(0, color="k", lw=1.0)
+            if bracket is not None:
+                ax0.axvspan(bracket[0], bracket[1], color="orange", alpha=0.2, label="Best sign-change bracket")
+            if np.isfinite(gamma):
+                ax0.axvline(gamma, color="r", ls="--", lw=1.5, alpha=0.8, label=rf"$\gamma$ = {gamma:.6f}")
+            if np.isfinite(gamma_refined):
+                ax0.axvline(gamma_refined, color="purple", ls=":", lw=1.5, alpha=0.8, label=rf"$\gamma_{{ref}}$ = {gamma_refined:.6f}")
+            ax0.set_xlabel(r"$\gamma$")
+            ax0.set_ylabel(r"$D_p(\gamma)$")
+            ax0.set_title(r"Shooting function $D_p(\gamma)$")
+            ax0.grid(True, alpha=0.4)
+            if gamma_xlim is not None:
+                ax0.set_xlim(*gamma_xlim)
+            ax0.legend()
+
+        ax1.plot(gg, np.log10(np.abs(Dp) + 1e-300), "-o", lw=1.5, ms=4)
+        ax1.axhline(0, color="k", lw=0.8)
+        if bracket is not None:
+            ax1.axvspan(bracket[0], bracket[1], color="orange", alpha=0.2, label="Best sign-change bracket")
+        if np.isfinite(gamma):
+            ax1.axvline(gamma, color="r", ls="--", lw=1.5, alpha=0.8, label=rf"$\gamma$ = {gamma:.6f}")
+        if np.isfinite(gamma_refined):
+            ax1.axvline(gamma_refined, color="purple", ls=":", lw=1.5, alpha=0.8, label=rf"$\gamma_{{ref}}$ = {gamma_refined:.6f}")
+        ax1.set_xlabel(r"$\gamma$")
+        ax1.set_ylabel(r"$\log_{10}|D_p(\gamma)|$")
+        ax1.set_title(r"Log verification of $D_p(\gamma)$")
+        ax1.grid(True, alpha=0.4)
+        if gamma_xlim is not None:
+            ax1.set_xlim(*gamma_xlim)
+        ax1.legend()
+
+        plt.tight_layout()
+        plt.show()
+
+    print("\nNegative-mode shooting diagnostics")
+    print("--------------------------------")
+    print(f"gamma                = {gamma}")
+    print(f"gamma_refined        = {gamma_refined}")
+    print(f"Dp_at_gamma_refined  = {Dp_at_gamma}")
+    print(f"best bracket         = {bracket}")
+    print(f"n_sign_changes       = {getattr(unstable_mode, 'n_sign_changes', 'n/a')}")
+    print(f"grid_is_uniform      = {getattr(unstable_mode, 'grid_is_uniform', 'n/a')}")
+    print(f"dr_min, dr_max       = {getattr(unstable_mode, 'dr_min', 'n/a')}, {getattr(unstable_mode, 'dr_max', 'n/a')}")
+    print(f"n_points_used        = {getattr(unstable_mode, 'n_points_used', 'n/a')}")
+    print(f"message              = {getattr(unstable_mode, 'message', '')}")
 
 
 def run_best_seed_selection(

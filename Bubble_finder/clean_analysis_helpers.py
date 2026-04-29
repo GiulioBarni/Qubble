@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -71,7 +71,7 @@ def _cache_file(cache_dir: Path, omega: float, d: int) -> Path:
 
 
 def solve_or_load_bounce_1d(
-    cache_dir: Path,
+    cache_dir: Optional[Path],
     model: ModelParams,
     omega: float,
     d: int,
@@ -83,7 +83,36 @@ def solve_or_load_bounce_1d(
     force_recompute: bool = False,
     verbose: bool = False,
 ) -> Dict[str, Any]:
-    """Load 1D bounce from cache or compute and cache it."""
+    """Load 1D bounce from cache or compute and cache it.
+
+    If ``cache_dir`` is ``None``, skip disk I/O and always solve fresh.
+    """
+    if cache_dir is None:
+        r, phi, phi0_center, phi_false, phi_true = solve_bounce(
+            model.phi0,
+            model.v1,
+            model.v2,
+            float(omega),
+            d=int(d),
+            r0=r0,
+            rmax=rmax,
+            n_grid_points=n_grid_points,
+            max_iter=max_iter,
+            verbose=verbose,
+        )
+        if r is None or phi is None:
+            raise RuntimeError(f"Failed to solve 1D bounce for d={d}, omega={omega:.6g}")
+        return {
+            "r": np.asarray(r, dtype=float),
+            "phi": np.asarray(phi, dtype=float),
+            "phi0_center": float(phi0_center),
+            "phi_false": float(phi_false),
+            "phi_true": float(phi_true),
+            "omega": float(omega),
+            "d": int(d),
+            "from_cache": False,
+        }
+
     cache_path = _cache_file(cache_dir, omega=omega, d=d)
     if cache_path.exists() and not force_recompute:
         data = np.load(cache_path, allow_pickle=True)
@@ -174,7 +203,7 @@ def compute_1d_observables(
 
 
 def run_1d_scan(
-    cache_dir: Path,
+    cache_dir: Optional[Path],
     model: ModelParams,
     omega_values: Iterable[float],
     *,

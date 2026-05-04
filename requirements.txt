@@ -1,0 +1,31 @@
+# =============================================================================
+# Qubble — Python dependencies
+# =============================================================================
+#
+# Qubble targets Python >= 3.10 (tested with 3.11). The version pins below are
+# minimum tested versions; later releases of these libraries are expected to
+# work, but are not guaranteed. Pin the exact versions if exact reproducibility
+# of the paper figures is required.
+#
+# Install with:
+#     python -m venv .venv
+#     source .venv/bin/activate
+#     pip install -r requirements.txt
+#
+# The project does not introduce any compiled extensions of its own; all heavy
+# lifting is delegated to NumPy / SciPy.
+# -----------------------------------------------------------------------------
+
+# numpy is intentionally pinned below 2.0: the codebase uses np.trapz at many
+# call sites; np.trapz was removed in numpy 2.0 (replaced by np.trapezoid).
+numpy>=1.24,<2.0
+scipy>=1.10,<1.13
+matplotlib>=3.7
+
+# Notebook environment (used for the main analysis notebooks)
+jupyter>=1.0
+ipykernel>=6.20
+notebook>=6.5
+
+# Test runner (the test suite is intentionally light)
+pytest>=7.0

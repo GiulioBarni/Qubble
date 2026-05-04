@@ -1,0 +1,63 @@
+cff-version: 1.2.0
+message: >-
+  If you use Qubble, please cite the accompanying paper:
+  "Tunneling decay at fixed charge: nucleation theory" by
+  G. Barni and J. R. Espinosa.
+title: "Qubble"
+abstract: >-
+  Qubble is the research code accompanying the paper
+  "Tunneling decay at fixed charge: nucleation theory".
+  It provides the numerical implementation used to study
+  semiclassical bubble nucleation from a homogeneous charged
+  medium at fixed conserved global charge Q. Qubble solves the
+  charged Euclidean saddle in a real doubled-field formulation
+  (independent fields phi and phibar) with twisted Euclidean-time
+  boundary conditions induced by charge projection, and continues
+  the resulting turning slice to real Minkowski time.
+type: software
+authors:
+  - family-names: Barni
+    given-names: Giulio
+    affiliation: "IFT-UAM/CSIC, Madrid"
+  - family-names: Espinosa
+    given-names: "José R."
+    affiliation: "IFT-UAM/CSIC, Madrid"
+license: MIT
+repository-code: "https://github.com/GiulioBarni/Qubble"
+keywords:
+  - vacuum decay
+  - bubble nucleation
+  - false vacuum
+  - finite charge
+  - Euclidean saddle
+  - O(4) bounce
+  - Q-ball
+  - semiclassical
+  - twisted boundary conditions
+
+# -----------------------------------------------------------------------------
+# Preferred citation: companion paper.
+# Replace the placeholder arXiv/DOI fields below once the paper is on arXiv
+# and/or has a journal DOI.
+# -----------------------------------------------------------------------------
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Barni
+      given-names: Giulio
+    - family-names: Espinosa
+      given-names: "José R."
+  title: "Tunneling decay at fixed charge: nucleation theory"
+  year: 2026
+  # Placeholders — update before publication:
+  # journal: ""
+  # volume: ""
+  # issue: ""
+  # start: ""
+  # end: ""
+  # doi: "10.XXXX/XXXXXXX"
+  # url: "https://arxiv.org/abs/XXXX.XXXXX"
+  identifiers:
+    - type: other
+      value: "arXiv:XXXX.XXXXX"
+      description: "arXiv preprint identifier (placeholder)"

@@ -1,19 +1,19 @@
 """
 Pytest for BubbleSolver2D (microcanonical 2D bubble, Q-ball-like).
-Run from BubbleX:  pytest Bubble_finder/tests/test_bubble_solver_2d.py -v
-Or from Bubble_finder:  pytest tests/test_bubble_solver_2d.py -v
-(Ensure parent BubbleX is on PYTHONPATH so Q_ball_finder is found.)
+Run from the Qubble project root:  pytest Bubble_finder/tests/test_bubble_solver_2d.py -v
+Or from Bubble_finder:              pytest tests/test_bubble_solver_2d.py -v
+(Ensure the project root is on PYTHONPATH so Q_ball_finder is found.)
 """
 from __future__ import annotations
 
 import os
 import sys
 
-# Ensure BubbleX and Bubble_finder are on path
+# Ensure the project root and Bubble_finder are on path
 _tests_dir = os.path.dirname(os.path.abspath(__file__))
 _bubble_finder = os.path.dirname(_tests_dir)
-_bubblex = os.path.dirname(_bubble_finder)
-for _d in (_bubblex, _bubble_finder):
+_project_root = os.path.dirname(_bubble_finder)
+for _d in (_project_root, _bubble_finder):
     if _d not in sys.path:
         sys.path.insert(0, _d)
 

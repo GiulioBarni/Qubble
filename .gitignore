@@ -1,4 +1,10 @@
+# =============================================================================
+# Qubble — .gitignore
+# =============================================================================
+
+# -----------------------------------------------------------------------------
 # Python
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
@@ -20,35 +26,78 @@ wheels/
 .installed.cfg
 *.egg
 
+# -----------------------------------------------------------------------------
 # Virtual environments
+# -----------------------------------------------------------------------------
 venv/
 env/
 ENV/
+.venv/
 .venv
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# -----------------------------------------------------------------------------
+# Jupyter / notebook artefacts
+# -----------------------------------------------------------------------------
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
 *.ipynb_checkpoints/
 
-# IDE
+# -----------------------------------------------------------------------------
+# Test / type-checker / linter caches
+# -----------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# -----------------------------------------------------------------------------
+# IDE / editor
+# -----------------------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# -----------------------------------------------------------------------------
+# OS-specific
+# -----------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
 
-# Data files (large)
+# -----------------------------------------------------------------------------
+# Numerical scratch / cached data
+# -----------------------------------------------------------------------------
+# Binary cached solutions (regenerable from the notebooks; large datasets are
+# archived externally — see the README files for the Zenodo link, when
+# available).
 *.npz
+*.npy
 *.h5
 *.hdf5
 
-# PDF outputs (optional - uncomment if you don't want to track PDFs)
-# *.pdf
+# Heavy beta-scan dataset (Q-ball auxiliary pipeline). These solutions are
+# expensive to recompute and are archived externally rather than tracked in
+# git. See Q_ball_finder/README.md.
+Q_ball_finder/data/beta_scan_solutions/
 
-# Temporary files
+# Local scratch directories sometimes produced by the notebooks.
+outputs/
+scratch/
+tmp/
+
+# -----------------------------------------------------------------------------
+# Temporary / log files
+# -----------------------------------------------------------------------------
 *.tmp
 *.log
+*.bak
+
+# -----------------------------------------------------------------------------
+# PDF outputs — kept tracked by default (they include the paper figures).
+# Uncomment the line below to exclude all PDFs from git.
+# -----------------------------------------------------------------------------
+# *.pdf

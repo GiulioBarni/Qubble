@@ -1,0 +1,34 @@
+# =============================================================================
+# Qubble — Conda environment specification
+# =============================================================================
+#
+# Create the environment with:
+#     conda env create -f environment.yml
+#     conda activate qubble
+#
+# Or, with mamba:
+#     mamba env create -f environment.yml
+#     mamba activate qubble
+#
+# Pinned versions are intentionally kept loose so that minor security and
+# bug-fix releases of the underlying libraries are picked up automatically.
+# Pin to exact versions if exact numerical reproducibility of the published
+# figures is required.
+# -----------------------------------------------------------------------------
+
+name: qubble
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  # numpy is intentionally pinned below 2.0: the codebase uses np.trapz at many
+  # call sites; np.trapz was removed in numpy 2.0 (replaced by np.trapezoid).
+  - numpy>=1.24,<2.0
+  - scipy>=1.10,<1.13
+  - matplotlib>=3.7
+  - jupyter>=1.0
+  - ipykernel>=6.20
+  - notebook>=6.5
+  - pytest>=7.0
+  - pip

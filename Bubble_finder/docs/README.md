@@ -9,15 +9,11 @@ numerical implementation used in `Bubble_finder/`.
 Bubble_finder/docs/numerical_implementation.pdf
 ```
 
-The PDF is **not** present in the repository at the time of this initial
-release-preparation commit. It should be placed in this directory before the
-public release.
-
 ## Intended contents
 
-The document corresponds to the technical appendices of the paper
+The document corresponds to the technical details of the paper
 *"Tunneling decay at fixed charge: nucleation theory"* (Barni & Espinosa),
-from Appendix B onward, rewritten as a self-contained numerical-implementation
+rewritten as a self-contained numerical-implementation
 note. It is intended to make the code in `Bubble_finder/` readable on its own,
 without requiring the reader to keep the published paper open.
 

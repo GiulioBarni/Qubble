@@ -9,7 +9,7 @@ the paper to study semiclassical bubble nucleation from a homogeneous charged
 medium at fixed conserved global charge $Q$.
 
 This is a **publication reproducibility companion**, not a general-purpose
-finite-density tunnelling package. The code is tailored to the explicit
+finite-charge tunnelling package. The code is tailored to the explicit
 scalar model studied in the paper and to the specific numerical methods
 described there.
 
@@ -98,7 +98,7 @@ The two scientific subfolders carry their own README files with a more
 detailed explanation of conventions, files, and workflows:
 
 - `Bubble_finder/README.md` — main fixed-$Q$ pipeline.
-- `Q_ball_finder/README.md` — auxiliary Q-ball / fixed-charge tooling.
+- `Q_ball_finder/README.md` — Q-ball / fixed-charge tunneling decay.
 
 ---
 
@@ -256,19 +256,13 @@ used by the auxiliary Q-ball pipeline:
 - `Qball_solution_Q_353.npz`, `ansatz_solution_beta_55.npz` — example cached
   solutions, **gitignored** (regenerable from `Q_ball_finder/notebooks/`).
 - `beta_scan_solutions/` — the heavy beta-scan dataset (~140 MB, dozens of
-  `.npz` files), **gitignored** and intended for external archiving (e.g.
-  Zenodo). This is documented in `Q_ball_finder/README.md`.
+  `.npz` files), **gitignored** and intended for external archiving. 
+  This is documented in `Q_ball_finder/README.md`.
 
 The main `Bubble_finder/` pipeline currently does not ship cached `.npz`
 solutions; the analysis is rerun from the notebook. If cached solutions are
 added in the future, they should also be archived externally and referenced
 from the notebooks.
-
-> **Before public release**, the heavy `beta_scan_solutions/` dataset should
-> be uploaded to Zenodo and the resulting DOI added to this README and to the
-> `Q_ball_finder/README.md`.
-
----
 
 ## Tests
 
@@ -311,6 +305,7 @@ full text.
 ## Contact
 
 - **Giulio Barni** — IFT-UAM/CSIC, Madrid.
+- mail: giulio.barni@ift.csic.es or giulio.barni95@gmail.com
 - For bugs and questions, please open a
   [GitHub issue](https://github.com/GiulioBarni/Qubble/issues).
 - See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidance on filing issues or

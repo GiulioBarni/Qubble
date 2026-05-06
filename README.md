@@ -17,7 +17,7 @@ described there.
 
 ## Overview
 
-Qubble implements the fixed-$Q$ semiclassical framework developed in the paper.
+Qubble implements the fixed $Q$ semiclassical framework developed in the paper.
 The decay of a homogeneous charged medium is formulated in a definite charge
 sector, and the path integral is projected onto fixed $Q$. After Wick rotation,
 charge projection is conjugate to a residual twist $\eta_0$ in Euclidean time,
@@ -28,9 +28,9 @@ The numerical pipeline computes:
 
 - neutral Coleman O(4) reference bounces (zero-charge limit),
 - reduced 1D bounce profiles for d = 1, 3, 4 at fixed frequency $\omega$,
-- two-dimensional fixed-$Q$ Euclidean saddles in $(r, \tau)$ with twisted
+- two-dimensional fixed $Q$ Euclidean saddles in $(r, \tau)$ with twisted
   boundary conditions and a Newton solver with analytic sparse Jacobian,
-- the fixed-$Q$ decay exponent relative to the homogeneous charged
+- the fixed $Q$ decay exponent relative to the homogeneous charged
   reference state in the same charge sector,
 - static-energy decomposition and energy/charge diagnostics,
 - branch structure from O(4), O(3), and O(1) seeds,
@@ -48,7 +48,7 @@ exponent.
 
 ```text
 Qubble/
-├── Bubble_finder/                # main fixed-Q bubble nucleation pipeline
+├── Bubble_finder/                # main fixed Q bubble nucleation pipeline
 │   ├── __init__.py
 │   ├── potential_bubble.py       # scalar potential V(phi) and Omega(phi)
 │   ├── bounce_1d.py              # reduced 1D O(d) bounce solver
@@ -67,7 +67,7 @@ Qubble/
 │   ├── docs/                              # placeholder for technical PDF
 │   └── tests/
 │
-├── Q_ball_finder/                # auxiliary Q-ball / fixed-charge solvers
+├── Q_ball_finder/                # auxiliary Q-ball / fixed charge solvers
 │   ├── __init__.py
 │   ├── potentials.py             # logistic Q-ball potential
 │   ├── bounce_solver.py          # general O(d) bounce
@@ -97,8 +97,8 @@ Qubble/
 The two scientific subfolders carry their own README files with a more
 detailed explanation of conventions, files, and workflows:
 
-- `Bubble_finder/README.md` — main fixed-$Q$ pipeline.
-- `Q_ball_finder/README.md` — Q-ball / fixed-charge tunneling decay.
+- `Bubble_finder/README.md` — main fixed $Q$ pipeline.
+- `Q_ball_finder/README.md` — Q-ball / fixed charge tunneling decay.
 
 ---
 
@@ -119,11 +119,11 @@ conserved global charge $Q$, the standard Coleman picture has to be modified:
 4. The relevant suppression compares the nontrivial bounce with the
    homogeneous charged reference configuration **in the same charge sector**.
 
-Schematically, the fixed-charge decay exponent is
+Schematically, the fixed charge decay exponent is
 
 $$
 F_{Q,\beta}^{\rm bounce}
-\;=\; S_E[\phi_b,\bar\phi_b]\;-\;S_E[\phi_i,\bar\phi_i]\;+\;\eta_0\,Q,
+= S_E[\phi_b,\bar\phi_b]-S_E[\phi_i,\bar\phi_i]+\eta_0\,Q,
 $$
 
 where $\phi_b$ is the nontrivial Euclidean saddle, $\phi_i$ denotes the
@@ -205,7 +205,7 @@ The minimal workflow to reproduce the main paper results is:
 5. Run the **2D solver setup and seeds** (Sections 6–9). This builds the
    default 2D grid and constructs O(4)/O(3)/O(1) seeds.
 6. Run the **2D Newton solve and $\eta_0$ scan** (Sections 10–11). This
-   produces the fixed-$Q$ saddle and computes the decay exponent.
+   produces the fixed $Q$ saddle and computes the decay exponent.
 7. Run the **diagnostics** (Sections 12–13): static-energy decomposition,
    parallel analyses for different seeds.
 8. Optionally run the **continuation scans** (Sections 14–16) — these

@@ -275,6 +275,8 @@ def build_seed(
     solver: Any,
     seed_type: str,
     profiles_1d: Dict[str, Dict[str, np.ndarray]],
+    *,
+    o4_tau_stretch: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Unified 2D seed builder.
@@ -284,6 +286,12 @@ def build_seed(
     - "O3_static_seed"
     - "O1_tau_seed"
     - "homogeneous_seed"
+
+    o4_tau_stretch
+        For ``O4_seed`` only: anisotropic O(4)-like radius
+        ``rho_eff = sqrt(r^2 + (|tau|/s)^2)`` used to sample the 1D profile.
+        Use ``s > 1`` to elongate the seed along ``|tau|`` (slower variation
+        along Euclidean time); ``s == 1`` is the standard isotropic embedding.
     """
     seed_type = seed_type.strip()
     r = np.asarray(solver.grid.r, dtype=float)
@@ -293,7 +301,10 @@ def build_seed(
 
     if seed_type == "O4_seed":
         p = profiles_1d["O4"]
-        rho_e = np.sqrt(R * R + T * T)
+        s = float(o4_tau_stretch)
+        if not (s > 0.0) or not np.isfinite(s):
+            raise ValueError(f"o4_tau_stretch must be finite and > 0, got {o4_tau_stretch!r}")
+        rho_e = np.sqrt(R * R + (T / s) ** 2)
         phi_raw = _interp_profile(p["r"], p["phi"], rho_e)
         phi_seed, _ = _normalize_profile_to_solver_phi_units(phi_raw, float(solver.rho0))
     elif seed_type == "O3_static_seed":

@@ -26,6 +26,7 @@ matplotlib>=3.7
 jupyter>=1.0
 ipykernel>=6.20
 notebook>=6.5
+pandas>=2.0
 
 # Test runner (the test suite is intentionally light)
 pytest>=7.0

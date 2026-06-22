@@ -53,19 +53,13 @@ $$
 The decay is treated at fixed total charge.  This requires a charge projection in the Euclidean path integral.  At the saddle, the projection appears as a real exponential twist in Euclidean time.  The Euclidean fields are therefore not a field and its complex conjugate, but two independent fields,
 
 $$
-\varphi(\tau,r),\qquad \bar\varphi(\tau,r),
+\phi(\tau,r),\qquad \bar\phi(\tau,r),
 $$
 
 which are recombined into a physical complex field only at the turning slice.  The fixed-$Q$ exponent computed by the code has the form
 
 $$
-F_{Q,\beta}
-=
-S_E[\varphi_b,\bar\varphi_b]
--
-S_E[\varphi_i,\bar\varphi_i]
-+
-\eta_0 Q,
+F_{Q,\beta}=S_E[\phi_b,\bar\phi_b]-S_E[\phi_i,\bar\phi_i]+\eta_0 Q,
 $$
 
 where $\eta_0$ is the residual twist after removing the trivial homogeneous Euclidean rotation.
@@ -162,32 +156,11 @@ A typical workflow is:
 
 Heavy scans should be cached.  The notebooks are written so that scan cells can save intermediate results and later reload them, avoiding unnecessary reruns.
 
----
+## Naming conventions and normalization
 
-## Data and generated files
+Two points to keep in mind when comparing code and paper notation.
 
-Large generated files should not be committed to the public repository.  In particular, avoid committing:
-
-```text
-*.npz
-*.npy
-*.pkl
-*.mp4
-*.gif
-__pycache__/
-.ipynb_checkpoints/
-data/heavy_scans/
-```
-
-Small text caches that are needed for quick reproducibility may be tracked case by case.  Large scan outputs and videos should be regenerated locally or archived externally.
-
----
-
-## Naming conventions and normalization warnings
-
-There are two common sources of mistakes.
-
-First, the paper uses the physical modulus $\rho$, while parts of the code use the solver-normalized field amplitude $\phi=\rho/\sqrt{2}$.  In particular, whenever a code variable is called `rho0`, check the local file documentation: in some solver contexts it denotes the homogeneous solver amplitude rather than the physical modulus.
+First, the paper uses the physical modulus $\rho$, while parts of the code use the solver-normalized field amplitude $\phi=\rho/\sqrt{2}$.  Take care not to mix the two: they differ by a factor of $\sqrt{2}$.  In particular, whenever a code variable is called `rho0`, check the local file documentation—in some solver contexts it denotes the homogeneous solver amplitude $\phi$ rather than the physical modulus $\rho$.
 
 Second, the residual twist used in the numerical solver is not the full Euclidean twist.  The homogeneous Euclidean rotation has already been factored out.  The tuned variable is therefore
 

@@ -1,19 +1,5 @@
-"""
-Computation of Euclidean action and suppression exponent for semiclassical decay rate.
+"""Euclidean action and Q-ball decay exponent on the half-τ interval."""
 
-This module provides functions to compute the Euclidean action S_E and the suppression
-exponent F_{Q,beta} used in the semiclassical decay rate Γ ~ exp(-F_{Q,beta}).
-
-The 2D solver works on the half Euclidean-time interval: -beta/2 < tau < 0 with a
-staggered grid. The full action S_E[phi_cl] over (-beta/2, beta/2) is obtained by
-doubling the half-interval result using time-reflection symmetry.
-
-Two methods are provided for computing F_{Q,beta}:
-1. Legacy method: F = S_E[phi_cl] - beta*(E_Q - omega*Q) + eta0*Q
-   (suffers from large cancellations and discretization mismatches)
-2. Direct difference method: F = 2*∫[L_E(phi_cl) - L_E(phi_Q)] + eta0*Q
-   (numerically stable, avoids cancellations by computing difference on same grid)
-"""
 
 import numpy as np
 from typing import Callable
@@ -22,13 +8,7 @@ from .potentials import LogisticPotentialParams, logistic_potential_rho
 
 
 def _radial_derivative_stencil(f_i: np.ndarray, r: np.ndarray) -> np.ndarray:
-    """
-    Compute radial derivative using the standard stencil:
-    - Central differences in bulk: df[i] = (f[i+1] - f[i-1]) / (r[i+1] - r[i-1])
-    - One-sided at boundaries
-    
-    This is the same stencil used in compute_energy and compute_euclidean_action_half.
-    """
+    """Radial derivative (central in bulk, one-sided at boundaries)."""
     df = np.empty_like(f_i, dtype=complex)
     df[0]  = (f_i[1] - f_i[0]) / (r[1] - r[0])
     df[-1] = (f_i[-1] - f_i[-2]) / (r[-1] - r[-2])
@@ -441,21 +421,7 @@ def compute_suppression_exponent_direct_difference(
 def make_V_of_s_from_params(
     params: LogisticPotentialParams,
 ) -> Callable[[np.ndarray], np.ndarray]:
-    """
-    Create a V_of_s function from LogisticPotentialParams, shifted so V(0)=0.
-    
-    This is a convenience wrapper for notebook use.
-    
-    Parameters
-    ----------
-    params
-        LogisticPotentialParams instance
-    
-    Returns
-    -------
-    Callable
-        Function V_of_s(s) where s = |φ|², with V(0)=0
-    """
+    """Return V(s) = V_logistic(s) − V(0) with s = |φ|²."""
     V_rho, _, _ = logistic_potential_rho(params)
     V0 = float(V_rho(0.0))
     def V_of_s(s):

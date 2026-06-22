@@ -1,11 +1,5 @@
 """
-Utility functions and data structures for the scalar potentials that appear
-in the Q-ball analysis.  The primary target is the logarithmic potential used
-in the reference notebook, but a couple of auxiliary toy potentials are also
-exposed for testing the one-dimensional bounce solver.
-
-All functions are vectorised through NumPy so they can be used seamlessly with
-arrays.  The derivatives are coded analytically for good numerical stability.
+Scalar potentials for the Q-ball analysis (logistic model and toy benchmarks).
 """
 
 from __future__ import annotations
@@ -27,8 +21,7 @@ class LogisticPotentialParams:
         V(ρ) = - (m^2 v^2 / b) · log( e^{-b ρ / v^2} + c ),
         c = e^{-b} / (1 + e^{-b}),
 
-    with ρ = |φ|^2.  In the notebook χ denotes |φ| and is frequently used
-    instead of ρ; conversion helpers are provided below.
+    with ρ = |φ|².  Here χ = |φ|; use logistic_potential_chi for the χ representation.
     """
 
     m: float = 1.0
@@ -82,8 +75,7 @@ def logistic_potential_chi(
     Callable[[ArrayLike], ArrayLike],
 ]:
     """
-    Same potential, now expressed in terms of χ = |φ|.  We use ρ = χ² / 2,
-    consistently with the notebook.
+    Same potential in χ = |φ|, with ρ = χ²/2.
     """
     V_rho, dV_drho, d2V_drho2 = logistic_potential_rho(params)
 

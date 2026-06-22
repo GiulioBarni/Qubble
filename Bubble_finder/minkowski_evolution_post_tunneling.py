@@ -1,42 +1,7 @@
-"""
-Minkowski post-tunneling evolution extracted from a 2D Euclidean saddle.
+"""Minkowski evolution after analytic continuation from the 2D Euclidean saddle.
 
-This module is written to be consistent with the conventions used in the 2D
-solver and observables:
-
-- The Euclidean solver reconstructs fields as phi(tau, r), phibar(tau, r), with
-  rho0 = |phi| in solver units.
-- The physical modulus entering the potential is
-      rho_phys = sqrt(2 * Re(phi * phibar))
-  up to the usual small regulator rho_eps.
-- The Euclidean charge-density convention used in observables_2d is
-      q_E = Re(phibar * d_tau phi - phi * d_tau phibar).
-- After analytic continuation t = -i tau, the Minkowski initial velocities are
-      d_t phi|_{t=0}    = +i d_tau phi|_{tau=0},
-      d_t phibar|_{t=0} = +i d_tau phibar|_{tau=0}.
-
-The module evolves the full complex fields phi and phibar in real Minkowski
- time. A polar decomposition is also provided for diagnostics:
-
-    phi    = (rho_phys / sqrt(2)) * exp(+beta)
-    phibar = (rho_phys / sqrt(2)) * exp(-beta)
-
-When the Minkowski solution is physical, phibar should remain close to conj(phi),
-so beta becomes approximately imaginary and its imaginary part is the usual
-physical phase. We keep the more general beta representation because it is the
-natural continuation of the Euclidean complex-saddle variables.
-
-Main design choices:
-- The evolution is performed directly for phi and phibar, since this avoids
-  singular polar equations near rho_phys = 0.
-- A second-order velocity-Verlet integrator is used.
-- The spherical radial Laplacian is implemented with regularity at r = 0.
-- A configurable outer sponge can damp outgoing radiation and reduce boundary
-  reflections.
-- Optional symmetrization to the physical subspace phibar = conj(phi) can be
-  enforced after each step, if desired.
-
-All comments and docstrings are in English.
+Evolves (φ, φ̄) on a spherical grid with velocity-Verlet. Initial data follow the
+τ = 0 ghost reconstruction used in bounce2d and observables_2d.
 """
 
 from __future__ import annotations
@@ -385,8 +350,7 @@ def extract_initial_data_from_fields(
     """
     Extract Minkowski initial data from already reconstructed Euclidean fields.
 
-    This function is generic and does not use solver ghost rules. It is useful
-    only when tau = 0 lies in the interior of the provided tau grid. If tau = 0
+    Finite-difference τ derivative; invalid if τ = 0 is a ghost point — use extract_initial_data_from_solver() of the provided tau grid. If tau = 0
     is a boundary of the half-box, prefer extract_initial_data_from_solver().
     """
     phi = np.asarray(phi, dtype=np.complex128)
@@ -1007,7 +971,7 @@ def compare_energy_drift_across_dt(
     config_template: Optional[MinkowskiEvolutionConfig] = None,
 ) -> List[Dict[str, float]]:
     """
-    Convenience validation helper:
+    Compare drift for several dt:
     run the same setup for multiple dt values and report conservation drifts.
     """
     cfg0 = MinkowskiEvolutionConfig() if config_template is None else config_template
@@ -1300,7 +1264,7 @@ def run_minkowski_evolution(
 
 
 # -----------------------------------------------------------------------------
-# Convenience wrappers
+# Wrappers
 # -----------------------------------------------------------------------------
 
 
@@ -1315,7 +1279,7 @@ def run_minkowski_evolution_from_solver(
     extract_enforce_conjugacy: bool = False,
 ) -> MinkowskiHistory:
     """
-    Convenience wrapper:
+    
     extract initial data from the Euclidean 2D solution and evolve them.
     """
     r, phi0, phibar0, dotphi0, dotphibar0 = extract_initial_data_from_solver(

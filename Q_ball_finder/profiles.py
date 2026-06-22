@@ -138,9 +138,7 @@ def compute_unstable_mode(
     gamma_scan: Tuple[float, float] = (0.01, 0.2),
     n_scan: int = 60,
 ) -> UnstableMode:
-    """
-    Reproduce the shooting method of the notebook to find the unstable mode.
-    """
+    """Unstable mode around the Q-cloud profile (shooting method)."""
     omega = profile.omega
     r_bg = profile.r
     rho_bg = profile.rho

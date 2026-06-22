@@ -1,10 +1,4 @@
-"""
-Utility helpers used by the Jupyter notebooks.
-
-The functions defined here are kept lightweight wrappers around the
-package internals so that they can be imported directly inside the
-notebooks without cluttering them with boilerplate code.
-"""
+"""Lightweight wrappers imported by the Q_ball_finder notebooks."""
 
 from __future__ import annotations
 
@@ -226,7 +220,7 @@ def resample_ansatz(
     omega
         Frequency parameter (required if resample_phi_directly=False)
     resample_phi_directly
-        If True, resample phi/phibar directly (legacy behavior).
+        If True, resample φ/φ̄ directly.
         If False (recommended), resample only y/ybar and reconstruct phi/phibar.
     clamp_tau_to_plateau
         If True (default), clamp tau values to plateau when beta increases.
@@ -240,7 +234,7 @@ def resample_ansatz(
     r_new, tau_new = grid_new.r, grid_new.tau
 
     if resample_phi_directly:
-        # Legacy behavior: resample all fields directly
+        # Resample all fields directly
         phi_new = resample_complex_field(
             ansatz_old.phi, r_old, tau_old, r_new, tau_new,
             clamp_tau_to_plateau=clamp_tau_to_plateau
@@ -338,7 +332,6 @@ def warm_start_from_solution(
     """
     Prepare warm start from a previous converged solution for beta continuation.
     
-    This function:
     1. Creates AnsatzResult from previous solution
     2. Resamples y/ybar onto new grid (with tau clamping to plateau)
     3. Reconstructs phi/phibar from resampled y/ybar

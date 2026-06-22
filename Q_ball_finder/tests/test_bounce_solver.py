@@ -4,7 +4,7 @@ from .. import bounce_solver, potentials, qball_observables
 
 
 def test_quartic_bounce_matches_notebook_values():
-    """Replicate the quartic example from the original notebook."""
+    """Quartic bounce regression values."""
     V, dV = potentials.quartic_potential(eta=0.2)
 
     solution = bounce_solver.solve_bounce(

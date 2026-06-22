@@ -1,21 +1,9 @@
+"""Euclidean action and fixed-charge suppression exponent F_{Q,β}.
+
+Half-interval action is doubled by τ-reflection symmetry. Reference state: homogeneous
+charged background with Legendre term η₀ Q.
 """
-Computation of Euclidean action and suppression exponent for bubble nucleation at fixed charge.
 
-This module provides functions to compute the Euclidean action S_E and the suppression
-exponent F^{bounce}_{Q,β} for the semiclassical bubble nucleation rate Γ ~ exp(-F).
-
-The 2D solver works on the half Euclidean-time interval τ ∈ (-β/2, 0). The full action
-S_E[φ_b] over (-β/2, β/2) is obtained by doubling the half-interval result using
-time-reflection symmetry.
-
-Reference: homogeneous charged configuration (metastable initial state).
-  - Suppression exponent: F^{bounce}_{Q,β} = S_E[φ_b] - S_E[φ_hom] + η₀ Q.
-  - Homogeneous action: S_E[φ_hom] = β V_ball (V(s0) − ω² s0), with s0=|φ|²=ρ₀²/2.
-  - Activation exponent: F_act = β (E_crit − E_hom). Both E_crit and E_hom must be
-    computed without background subtraction (raw energies).
-
-All comments and docstrings are in English.
-"""
 
 from __future__ import annotations
 

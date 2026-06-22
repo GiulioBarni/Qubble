@@ -1,42 +1,8 @@
-# File: branching.py  (versione completa)
-# NOTE: questo è esattamente quello scritto in /mnt/data/branching.py
 """
-Bubble_finder.branching
+Branching from a sphaleron-like 2D root via an augmented Newton system.
 
-Find a τ-dependent bounce starting from a sphaleron-like 2D solution.
-
-Why this file exists
---------------------
-In this project the 2D Newton solver can have a huge basin of attraction
-for a given saddle/root (typically the sphaleron). Naively seeding
-    x0 = x_sph ± ε v
-and running Newton often reconverges to the same root.
-
-To reliably leave the sphaleron root we solve an augmented system that pins
-the solution at a fixed displacement along the negative-mode direction.
-
-Augmented system (fields + 1 constraint)
----------------------------------------
-Let F(x)=0 be the packed field equations solved by Newton.
-Let v_- be a negative-mode direction around x_sph.
-
-We solve
-    R(x) = [ F(x),  <x-x_sph, v_-> - c ] = 0
-for fixed c = ±eps.
-This removes the sphaleron root (for c != 0) and forces Newton onto a different
-branch if one exists.
-
-Public API
-----------
-- slicewise_energies(solver, sol) -> (tau_sorted, E_static, E_full)
-- slicewise_energies_at_tau(solver, y, ybar, tau_abscissa) -> (tau_abscissa, E_static, E_full)
-- recenter_solution_in_tau(solver, sol, ...) -> (y_new, ybar_new, info)
-- make_centered_tau_and_roll(solver, y, ybar, tau_center=0) -> (tau_plot, y2, ybar2, info)
-- find_bounce_from_sphaleron(...) -> (best_bounce_or_None, diagnostics)
-
-The implementation is intentionally minimal and reuses:
-  Bubble2DSolver.residual/jacobian
-  Bubble2DSolver.newton_solve_aug
+Pins <x − x_sph, v_−> = c to leave the sphaleron basin and search for a
+τ-dependent bounce on another branch.
 """
 
 from __future__ import annotations
@@ -85,9 +51,8 @@ def slicewise_energies(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return (tau_sorted, E_static(tau), E_full(tau)).
 
-    Conventions match the notebook diagnostics:
-      E_static(τ) = 4π ∫ dr r^2 [ (∂r φ)(∂r φ̄) + U(ρ) ]
-      E_full(τ)   = 4π ∫ dr r^2 [ (∂τ φ)(∂τ φ̄) + (∂r φ)(∂r φ̄) + U(ρ) ]
+    E_static(τ) = 4π ∫ dr r² [(∂r φ)(∂r φ̄) + U(ρ)]
+    E_full(τ)   = 4π ∫ dr r² [(∂τ φ)(∂τ φ̄) + (∂r φ)(∂r φ̄) + U(ρ)]
 
     τ is returned sorted ascending (needed for np.gradient).
     """

@@ -1,7 +1,5 @@
-"""
-Helper functions for beta scan continuation with dtau-fixed grids and plateau enforcement.
-These functions should be imported or pasted into notebook cells.
-"""
+"""β continuation with fixed Δτ grids and plateau enforcement."""
+
 
 import numpy as np
 from Q_ball_finder.ansatz import AnsatzResult
@@ -46,7 +44,6 @@ def prepare_warm_start_for_beta_continuation(
     """
     Prepare warm start for beta continuation by resampling previous solution.
     
-    This function:
     1. Computes appropriate Ntau for beta_new to keep dtau constant
     2. Builds new grid
     3. Resamples previous solution onto new grid (only y/ybar, reconstructs phi/phibar)

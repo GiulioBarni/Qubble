@@ -33,7 +33,7 @@ def solve_bounce(
     n_grid_points: int = 1000,
 ):
     """
-    Robust bounce solution finder using overshoot/undershoot with events.
+    O(d)-symmetric bounce via overshoot/undershoot (event-driven).
 
     Uses bisection on φ(0) with events:
     - event_phi_false: φ crosses phi_false (overshoot)
@@ -219,7 +219,7 @@ def solve_bounce_O3(
     omega: float,
     **kwargs,
 ):
-    """Convenience wrapper for O(3): solve_bounce(..., d=3, ...)."""
+    """O(3) wrapper: solve_bounce(..., d=3, ...)."""
     return solve_bounce(phi0, v1, v2, omega, d=3, **kwargs)
 
 
@@ -230,11 +230,11 @@ def solve_bounce_O4(
     omega: float,
     **kwargs,
 ):
-    """Convenience wrapper for O(4): solve_bounce(..., d=4, ...)."""
+    """O(4) wrapper: solve_bounce(..., d=4, ...)."""
     return solve_bounce(phi0, v1, v2, omega, d=4, **kwargs)
 
 
-# Re-export 1D observables from central module (bounce_1d remains the notebook entry point)
+# Re-export 1D observables (bounce_1d entry point)
 __all__ = [
     "solve_bounce",
     "solve_bounce_O3",

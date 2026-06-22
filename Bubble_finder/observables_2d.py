@@ -1,18 +1,9 @@
+"""2D charge and energy on the solver grid (τ = 0 ghost reconstruction).
+
+Charge density: q = Re(φ̄ ∂τφ − φ ∂τφ̄),  Q = 4π ∫ r² q dr.
+1D helpers live in observables_1d.py.
 """
-observables_2d.py — 2D charge and energy (τ=0 ghost reconstruction).
 
-Purpose: 2D observables on the solver grid with twisted BC and ghost reconstruction at τ=0.
-1D helpers (Q_homogeneous_ball, compute_charge_1d, etc.) live in observables_1d.py.
-
-CHARGE CONVENTION (IMPORTANT)
------------------------------
-We use
-    q(τ,r) = Re( phibar * ∂τ phi  -  phi * ∂τ phibar )
-    Q(τ)   = 4π ∫_0^{rmax} dr r^2 q(τ,r)
-
-This choice is consistent with observables_1d for solver.rho0=|phi|:
-Q_hom = 8π ω rho0^2 (rmax^3/3).
-"""
 
 from __future__ import annotations
 
@@ -35,7 +26,7 @@ from .observables_1d import (
     compute_free_energy_grandcanonical,
 )
 
-# Aliases for notebook compatibility
+# Aliases
 compute_charge_1d = compute_charge
 compute_energy_1d = compute_energy
 compute_charge_density_1d = compute_charge_density
@@ -84,7 +75,7 @@ def compute_charge_like_2d_from_1d(
 
 
 # -----------------------------------------------------------------------------
-# 2D observables helpers
+# 2D observables
 # -----------------------------------------------------------------------------
 
 def _safe_divide_by_r(num: np.ndarray, r: np.ndarray) -> np.ndarray:

@@ -1,8 +1,8 @@
 """
-Pytest for BubbleSolver2D (microcanonical 2D bubble, Q-ball-like).
-Run from the Qubble project root:  pytest Bubble_finder/tests/test_bubble_solver_2d.py -v
-Or from Bubble_finder:              pytest tests/test_bubble_solver_2d.py -v
-(Ensure the project root is on PYTHONPATH so Q_ball_finder is found.)
+Pytest for Bubble2DSolver.
+
+Run from the repository root:
+  pytest Bubble_finder/tests/test_bubble_solver_2d.py -v
 """
 from __future__ import annotations
 
@@ -36,11 +36,11 @@ except ImportError:
 
 
 def _get_potential():
-    """External potential as in notebook (potential_bubble)."""
+    """External potential from potential_bubble."""
     return make_potential_from_V(V_phi, dV_dphi, d2V_dphi2, phi0=1.999, v1=1.0, v2=2.0)
 
 
-RHO0_BRACKET = (1.0, 1.3)  # potential_bubble: root V'(ρ)=2ω²ρ (false vacuum)
+RHO0_BRACKET = (0.65, 0.75)  # solver amplitude |φ| for ω² = 2W(u=φ²)
 
 
 def test_sanity_background():

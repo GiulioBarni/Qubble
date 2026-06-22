@@ -89,6 +89,9 @@ outputs/
 scratch/
 tmp/
 
+# Regenerable notebook scan bundles (large pickles; load locally or from archive).
+Bubble_finder/notebooks/data/
+
 # -----------------------------------------------------------------------------
 # Temporary / log files
 # -----------------------------------------------------------------------------

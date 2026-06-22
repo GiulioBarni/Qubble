@@ -1,15 +1,5 @@
-"""
-Helper utilities for the clean bubble analysis notebook.
+"""Notebook helpers: 1D bounce cache, seeds, η₀ scan, and standard plots."""
 
-This module centralizes reusable logic so the notebook remains compact:
-- plotting/style setup
-- 1D bounce caching/loading
-- 1D omega scans
-- 2D seed construction with a unified interface
-- eta0 scan + Newton wrapper
-- repeated plotting helpers
-- static-energy diagnostics vs tau
-"""
 
 from __future__ import annotations
 
@@ -83,9 +73,9 @@ def solve_or_load_bounce_1d(
     force_recompute: bool = False,
     verbose: bool = False,
 ) -> Dict[str, Any]:
-    """Load 1D bounce from cache or compute and cache it.
+    """Load cached 1D bounce or solve and save.
 
-    If ``cache_dir`` is ``None``, skip disk I/O and always solve fresh.
+    If cache_dir is None, skip disk I/O and always solve fresh.
     """
     if cache_dir is None:
         r, phi, phi0_center, phi_false, phi_true = solve_bounce(
@@ -237,7 +227,7 @@ def run_1d_scan(
 
 
 def _interp_profile(r_src: np.ndarray, phi_src: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
-    """Stable linear interpolation with flat tails."""
+    """Linear interpolation with flat extrapolation."""
     f = interp1d(
         np.asarray(r_src, dtype=float),
         np.asarray(phi_src, dtype=float),
@@ -279,19 +269,10 @@ def build_seed(
     o4_tau_stretch: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Unified 2D seed builder.
+    Build a 2D initial guess.
 
-    seed_type options:
-    - "O4_seed"
-    - "O3_static_seed"
-    - "O1_tau_seed"
-    - "homogeneous_seed"
-
-    o4_tau_stretch
-        For ``O4_seed`` only: anisotropic O(4)-like radius
-        ``rho_eff = sqrt(r^2 + (|tau|/s)^2)`` used to sample the 1D profile.
-        Use ``s > 1`` to elongate the seed along ``|tau|`` (slower variation
-        along Euclidean time); ``s == 1`` is the standard isotropic embedding.
+    seed_type: O4_seed, O3_static_seed, O1_tau_seed, homogeneous_seed.
+    o4_tau_stretch: for O4_seed, anisotropic radius sqrt(r² + (|τ|/s)²).
     """
     seed_type = seed_type.strip()
     r = np.asarray(solver.grid.r, dtype=float)

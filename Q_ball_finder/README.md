@@ -8,11 +8,10 @@ machinery, applied to Q-ball-like configurations and to Q-ball-decay scans.
 It pre-dates the bubble-nucleation pipeline in `Bubble_finder/` and shares
 several primitives with it (radial/time grid, Newton driver, packed-field
 representation), but uses a different scalar potential and is **not** the
-main reproduction pipeline for the paper.
+main reproduction pipeline for *Globally Charged Vacuum Decay*.
 
-For a high-level overview of the project, see the
-[root README](../README.md). The main paper pipeline is documented in
-[`Bubble_finder/README.md`](../Bubble_finder/README.md).
+For the main paper pipeline, see [`Bubble_finder/README.md`](../Bubble_finder/README.md)
+(*Globally Charged Vacuum Decay*, forthcoming as arXiv:2606.xxxxx).
 
 ---
 
@@ -170,7 +169,7 @@ These tests are fast and self-contained.
 
 ## Relation to Qubble and the paper
 
-This folder is **auxiliary**: it predates the bubble-nucleation pipeline in
+This folder is **auxiliary**: it was developed before the bubble-nucleation pipeline in
 `Bubble_finder/`, it operates on a different scalar potential, and it
 implements Q-ball-type boundary conditions rather than the bubble-on-medium
 boundary conditions used in the paper. The shared primitives (`grid.py`,
@@ -179,9 +178,9 @@ $(y, \bar y)$ representation) are however imported by `Bubble_finder/`
 through soft imports, so this folder is part of the runtime dependency
 graph of the main pipeline.
 
-If you are reproducing the figures of *"Tunneling decay at fixed charge:
-nucleation theory"*, the entry point is
-`Bubble_finder/notebooks/Bubble_Tunneling_2D.ipynb`. The notebooks in this
-folder are useful for cross-checks against the Q-ball literature and for
+If you are reproducing the figures of *Globally Charged Vacuum Decay*
+(arXiv:2606.xxxxx), the entry point is
+`Bubble_finder/notebooks/Bubble_Tunneling_2D_public.ipynb`. The notebooks in
+this folder are useful for cross-checks against the Q-ball literature and for
 exploring the shared infrastructure, but they are not the paper's
 reproduction critical path.

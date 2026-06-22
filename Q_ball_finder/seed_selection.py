@@ -1,9 +1,5 @@
-"""
-Deterministic seed selection for 2D Q-ball bounce solver.
+"""Deterministic 2D seed selection by minimising ||F(x₀)|| over ansatz parameters."""
 
-This module provides functionality to select the best initial ansatz seed
-by minimizing the residual norm ||F(x0)|| over a grid of ansatz parameters.
-"""
 
 from __future__ import annotations
 
@@ -54,7 +50,7 @@ def select_best_negative_mode_seed(
     """
     Select the best initial ansatz seed by minimizing ||residual(x0)|| over a grid of parameters.
 
-    This function evaluates many candidate seeds and returns the one with the smallest
+    Evaluate candidate seeds and return the one with the smallest
     residual norm. All evaluation is deterministic (no randomness).
 
     Parameters
@@ -292,7 +288,7 @@ def select_best_plateau_seed(
     Select the best plateau ansatz seed by evaluating a grid of parameters and
     scoring candidates based on residual norm and nontriviality metrics.
     
-    This function builds ansätze with the structure φ(r,τ) = ρ(r) * f(τ) where
+    Build ansätze with the structure φ(r,τ) = ρ(r) * f(τ) where
     f(τ) transitions from plateau (metastable) at τ << τ_center to vacuum at τ >> τ_center.
     
     Parameters

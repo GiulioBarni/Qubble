@@ -1,61 +1,9 @@
-'''BubbleSolver2D.py
+"""2D Euclidean (τ, r) solver for fixed-charge bubble nucleation.
 
-2D Euclidean (tau, r) solver for bubble nucleation on a CHARGED HOMOGENEOUS background
-in the fixed-charge (microcanonical) formalism, built to mirror the Q-ball-decay ('Q-ball')
-architecture as closely as possible.
-
-Key features (Q-ball-like):
-- half Euclidean time interval: tau ∈ (-beta/2, 0) on a half-step grid
-- two partner fields (y, ybar) kept independent (DO NOT impose ybar=y)
-- reflection/swap at tau=0 (turning slice)
-- twist closure at tau=-beta/2 implemented ONLY through tau ghost rules
-- Newton–Raphson with analytic sparse Jacobian + backtracking line search
-- diagnostics and sanity checks:
-  * background exactness at eta0=0 (bulk + BC wiring test)
-  * analytic “twist source” check at eta0≠0 (boundary mismatch is predictable)
-  * Jacobian FD check (supports complex saddles via real/imag splitting)
-
-Core variables (Q-ball-like, with the MINIMAL mandatory shift for a nonzero medium):
-
-  phi_rot    := e^{-omega_ref * tau} * phi
-  phibar_rot := e^{+omega_ref * tau} * phibar
-
-  y    := r * (phi_rot    - rho0)
-  ybar := r * (phibar_rot - rho0)
-
-so that the homogeneous medium corresponds to y=ybar=0 (stable numerically) instead of y~r*rho0.
-
-IMPORTANT FIX vs common “bubble on medium” attempts:
-Twist at the Euclidean time boundary must be applied to the TOTAL fields
-  y_tot    = y    + r*rho0
-  ybar_tot = ybar + r*rho0
-not to the fluctuations alone.
-
-This single change is often the difference between “Newton never converges” and a working solver.
-
--------------------------------------------------------------------------------
-About complex saddles and the Jacobian
--------------------------------------------------------------------------------
-The bulk potential is taken as a function of
-  u := Re(phi_rot * phibar_rot)  (>=0, with a smooth projection)
-so it is *not* holomorphic in the complex fields. For genuine complex saddles,
-the correct Newton system is obtained by splitting into real/imag parts:
-
-  unknowns: (Re y, Im y, Re ybar, Im ybar)
-  equations: (Re Fy, Im Fy, Re Fyb, Im Fyb)
-
-This file implements that “RI mode” when settings.complex_saddle=True (default).
-You still keep the two partner fields (y, ybar); the split is only a numerical
-representation so that the Jacobian is mathematically consistent.
-
--------------------------------------------------------------------------------
-Production defaults (to match your stated requirements)
--------------------------------------------------------------------------------
-By default, the solver enforces:
-  tau_bc = 'twisted' and r_bc = 'neumann'
-Other BC choices remain available only if settings.allow_debug_bcs=True.
-
-'''
+Independent fields (y, ȳ) on the half-τ grid. The τ = −β/2 twist is applied to
+y_tot = y + rρ₀, not to the fluctuations alone. Same grid/Newton infrastructure as
+Q_ball_finder/bounce2d.py when available.
+"""
 
 from __future__ import annotations
 
@@ -71,11 +19,7 @@ from . import observables_2d
 
 
 def _format_obs_line(obs: Dict[str, Any], tgt: Optional[Dict[str, Any]] = None) -> str:
-    """
-    Single helper for observables logging: one line with rho_Q, rho_E and ratios vs reference.
-    Used in Newton callback, scans, and final summaries. All values from tau=0 ghost.
-    Reference densities (rho_Q_ref, rho_E_ref) come from tgt (homogeneous on same grid).
-    """
+    """Format ρ_Q, ρ_E and ratios vs the homogeneous reference (τ = 0 ghost)."""
     rho_Q = obs.get("rho_Q", 0.0)
     rho_E = obs.get("rho_E", 0.0)
     rho_Q_ref = tgt.get("rho_Q") if tgt else None
@@ -88,12 +32,12 @@ def _format_obs_line(obs: Dict[str, Any], tgt: Optional[Dict[str, Any]] = None) 
     )
 
 
-# Public alias for notebook and diagnostics
+# Aliases
 format_obs_line = _format_obs_line
 
 
 # -----------------------------------------------------------------------------
-# Optional reuse of Q-ball/Q_ball_finder infrastructure (grid + pack/unpack + Newton)
+# Import grid and Newton from Q_ball_finder when available
 # -----------------------------------------------------------------------------
 _build_grid = None
 RadialTimeGrid = None
@@ -187,7 +131,7 @@ def make_potential_from_V(
     v2: float,
 ) -> Tuple[PotentialFn, PotentialFn, PotentialFn]:
     """
-    Build U(rho), dU(rho), d2U(rho) from notebook-style V(φ), V'(φ), V''(φ) and parameters.
+    Build U(ρ), dU/dρ, d²U/dρ² from V(φ), V'(φ), V''(φ) and model parameters.
 
     Example:
         from potential_bubble import V_phi, dV_dphi, d2V_dphi2
@@ -308,7 +252,7 @@ def solve_rho0_for_omega_consistent(
       omega^2 - 2*W(u=x^2) = 0,
     where W is built with smooth_pos(u) and rho_phys = sqrt(2*u_pos + rho_eps).
     """
-    _ = d2U  # kept for API symmetry and future use
+    _ = d2U
 
     def f(x: float) -> float:
         return _omega2_minus_2W_consistent(
@@ -341,9 +285,9 @@ class Bubble2DSettings:
     Lr: float = 25.0
     beta: float = 60.0
 
-    # Boundary conditions (production defaults)
-    r_bc: str = "neumann"      # production: "neumann"; debug: "dirichlet_fluct"
-    tau_bc: str = "twisted"    # production: "twisted"; debug: "hom_past" or "neumann"
+    # Default boundary conditions
+    r_bc: str = "neumann"      # default: "neumann"; debug: "dirichlet_fluct"
+    tau_bc: str = "twisted"    # default: "twisted"; debug: "hom_past" or "neumann"
     allow_debug_bcs: bool = False
 
     # rotated-frame frequency for stability
@@ -381,7 +325,7 @@ class Bubble2DSettings:
             self.verbose = bool(self.newton_verbose)
 
         if not self.allow_debug_bcs:
-            # Enforce your “production” requirements:
+            # Default BCs:
             if self.tau_bc != "twisted":
                 raise ValueError("Production solver enforces tau_bc='twisted'. Set allow_debug_bcs=True to override.")
             if self.r_bc != "neumann":
@@ -469,7 +413,7 @@ class Bubble2DSolver:
                 settings.rho_eps,
             )
         else:
-            # Backward-compatible guard:
+            # If rho0 is supplied as ρ_phys rather than |φ|:
             # if user passed rho0 as physical modulus rho_phys (common when using vacua_of_Omega),
             # convert to solver convention rho0=|phi|=rho_phys/sqrt(2).
             rho0_in = float(settings.rho0)
@@ -605,7 +549,7 @@ class Bubble2DSolver:
         return phi, phibar
 
     # -------------------------------------------------------------------------
-    # tau ghost rules (Q-ball-like)
+    # τ ghost rules
     # -------------------------------------------------------------------------
     def _tau_neighbors(self, y: np.ndarray, ybar: np.ndarray, i: int):
         Nt = self.Nt
@@ -632,7 +576,7 @@ class Bubble2DSolver:
                 yb_ip1 = ybar[:, i + 1]
             return y_im1, y_ip1, yb_im1, yb_ip1
 
-        # Debug BCs kept only for experiments / limiting cases.
+        # Alternate τ BCs (allow_debug_bcs=True)
         if bc == "hom_past":
             if i == 0:
                 y_im1 = ybar[:, 0]
@@ -678,7 +622,7 @@ class Bubble2DSolver:
         y, ybar = self.unpack(vec)
         r = self.grid.r[:, None]
 
-        # TOTAL fields (for twist correctness)
+        # y_tot, ȳ_tot for the twist
         y_tot = y + r * self.rho0
         ybar_tot = ybar + r * self.rho0
 
@@ -774,7 +718,7 @@ class Bubble2DSolver:
         If complex_saddle=True: returns the mathematically consistent real Jacobian
         for the (Re,Im) split system (size 4*Nsite × 4*Nsite).
 
-        If complex_saddle=False: returns the legacy “Q-ball-style complex Jacobian”
+        If complex_saddle=False: use the two-field complex Jacobian
         for the 2-field complex system (size 2*Nsite × 2*Nsite). This is mainly
         useful for quick tests with nearly-real saddles.
         """
@@ -860,9 +804,7 @@ class Bubble2DSolver:
 
     def _jacobian_2field_legacy(self, vec: np.ndarray) -> sp.csc_matrix:
         """
-        Legacy Q-ball-like Jacobian (complex 2-field). This matches the structure
-        used in the Q_ball_finder bounce2d solver, but it is not fully consistent
-        for generic complex saddles because u involves a real-part projection.
+        Complex two-field Jacobian (real-part projection of u = Re(φ_rot φ̄_rot)).
         """
         y, ybar = self._unpack_2field(vec)
         r = self.grid.r[:, None]
@@ -994,7 +936,7 @@ class Bubble2DSolver:
                     J[rowb, iyb(j - 1, i)] += 1.0 / self.dr2
                     J[rowb, iyb(j + 1, i)] += 1.0 / self.dr2
 
-                # --- nonlinear term (legacy approximation) ---
+                # Nonlinear term
                 A_coef = (self.omega * self.omega - 2.0 * W[j, i])
                 du_dy = (ybar_tot[j, i] * inv_r2_j).real
                 du_dyb = (y_tot[j, i] * inv_r2_j).real
@@ -1032,7 +974,7 @@ class Bubble2DSolver:
         Nsite = self.Nr * self.Nt
         J = sp.lil_matrix((4 * Nsite, 4 * Nsite), dtype=float)
 
-        # index helpers
+        # Indexing
         def vid(block: int, j: int, i: int) -> int:
             return block * Nsite + j * self.Nt + i
 
@@ -1372,7 +1314,7 @@ class Bubble2DSolver:
         )
 
     # -------------------------------------------------------------------------
-    # Sanity checks (updated)
+    # Sanity checks
     # -------------------------------------------------------------------------
     def sanity_background_eta0_zero(self) -> Dict[str, Any]:
         """
@@ -1522,12 +1464,12 @@ class Bubble2DSolver:
 
     def potential_convention_report(self) -> str:
         """
-        Short English summary of potential and 2D conventions (no physics change).
+        Summary of potential and 2D field conventions.
         u = Re(phi_rot*phibar_rot), rho_phys = sqrt(2*u_pos + rho_eps), W = dU/(2*rho_phys),
         bulk coefficient A_coef = (omega^2 - 2W).
         """
         lines = [
-            "Potential / 2D convention (source of truth):",
+            "Potential / 2D conventions:",
             "  u = Re(phi_rot*phibar_rot)",
             "  rho_phys = sqrt(2*smooth_pos(u) + rho_eps)",
             "  W = dU(rho_phys)/(2*rho_phys)",
@@ -1537,14 +1479,14 @@ class Bubble2DSolver:
         return "\n".join(lines)
 
     # -------------------------------------------------------------------------
-    # Compatibility wrappers (notebook / legacy): same API, delegate to new checks
+    # Notebook API aliases
     # -------------------------------------------------------------------------
     def sanity_background(self) -> Dict[str, Any]:
-        """Legacy name: same as sanity_background_eta0_zero."""
+        """Alias for sanity_background_eta0_zero."""
         return self.sanity_background_eta0_zero()
 
     def run_sanity_test(self) -> Tuple[bool, str]:
-        """Legacy (notebook): (ok, msg) from eta0=0 background check."""
+        """Return (ok, msg) from the η₀ = 0 background check."""
         d = self.sanity_background_eta0_zero()
         ok = d["residual_norm"] < 1e-6
         msg = (
@@ -1556,7 +1498,7 @@ class Bubble2DSolver:
     def check_jacobian_consistency(
         self, x: np.ndarray, n_tests: int = 3, eps: float = 1e-7
     ) -> Dict[str, Any]:
-        """Legacy (notebook): dict with max_rel_error, mean_rel_error, test_results."""
+        """Finite-difference vs analytic Jacobian comparison."""
         d = self.check_jacobian(x, n_tests=n_tests, eps=eps)
         return dict(
             max_rel_error=d["max_rel"],
@@ -1573,7 +1515,7 @@ class Bubble2DSolver:
 
         - In complex_saddle=True mode, the state vector is real (Re/Im split), so
           this tests both real and imaginary directions correctly.
-        - In legacy mode (complex_saddle=False), this test is meaningful only for
+        - With complex_saddle=False, this test applies only to
           nearly-real solutions.
         """
         x = np.asarray(x)
@@ -1605,7 +1547,7 @@ class Bubble2DSolver:
         return dict(max_rel=float(np.max(errs)), mean_rel=float(np.mean(errs)), all=errs)
 
     # -------------------------------------------------------------------------
-    # Anchored initial guess (Q-ball-like)
+    # Anchored initial guess
     # -------------------------------------------------------------------------
     def build_anchored_initial_guess(self, rho_center: float, Rb: float, Lw: float, tau_scale: Optional[float] = None) -> np.ndarray:
         """
@@ -1925,7 +1867,7 @@ class Bubble2DSolver:
 
 
 if __name__ == "__main__":
-    # Example: external potential as in the notebook (potential_bubble)
+    # Example driver (potential_bubble)
     try:
         from .potential_bubble import V_phi, dV_dphi, d2V_dphi2
     except ImportError:

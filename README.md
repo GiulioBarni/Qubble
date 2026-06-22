@@ -1,46 +1,12 @@
 # Qubble
 
-> **Tunneling decay at fixed charge — research code accompanying the paper**
-> *"Tunneling decay at fixed charge: nucleation theory"*
-> by G. Barni and J. R. Espinosa.
+Numerical code for semiclassical charged vacuum decay at fixed global $U(1)$ charge.
 
-Qubble (a contraction of "Q-bubble") is the numerical implementation used in
-the paper to study semiclassical bubble nucleation from a homogeneous charged
-medium at fixed conserved global charge $Q$.
+Qubble is the numerical code accompanying *Globally Charged Vacuum Decay* (forthcoming as arXiv:2606.xxxxx).  It constructs fixed-charge Euclidean tunnelling saddles for a homogeneous medium carrying a conserved global $U(1)$ charge, computes the fixed-$Q$ suppression exponent, and uses the Euclidean turning slice as initial data for the subsequent Minkowski evolution.
 
-This is a **publication reproducibility companion**, not a general-purpose
-finite-charge tunnelling package. The code is tailored to the explicit
-scalar model studied in the paper and to the specific numerical methods
-described there.
+At finite charge the tunnelling problem is not the ordinary Coleman bounce problem.  The path integral must be projected onto a fixed charge sector, the Euclidean fields obey twisted Euclidean boundary conditions as independent Euclidean fields, and the saddle is naturally formulated in terms of two independent fields with a residual twist $\eta_0$.  The implementation follows this structure directly: it solves a two-dimensional boundary-value problem in $(r,\tau)$, tunes $\eta_0$ to impose the target charge, and then evolves the resulting bubble in real time.
 
----
-
-## Overview
-
-Qubble implements the fixed $Q$ semiclassical framework developed in the paper.
-The decay of a homogeneous charged medium is formulated in a definite charge
-sector, and the path integral is projected onto fixed $Q$. After Wick rotation,
-charge projection is conjugate to a residual twist $\eta_0$ in Euclidean time,
-and the saddle is solved as a real doubled-field problem in the independent
-Euclidean fields $\phi$ and $\bar\phi$.
-
-The numerical pipeline computes:
-
-- neutral Coleman O(4) reference bounces (zero-charge limit),
-- reduced 1D bounce profiles for d = 1, 3, 4 at fixed frequency $\omega$,
-- two-dimensional fixed $Q$ Euclidean saddles in $(r, \tau)$ with twisted
-  boundary conditions and a Newton solver with analytic sparse Jacobian,
-- the fixed $Q$ decay exponent relative to the homogeneous charged
-  reference state in the same charge sector,
-- static-energy decomposition and energy/charge diagnostics,
-- branch structure from O(4), O(3), and O(1) seeds,
-- post-tunnelling Minkowski evolution from the turning slice $\tau=0$,
-  including wall velocity and phase-gradient diagnostics,
-- publication-ready figures used in the paper.
-
-The implementation verifies the $Q\to 0$ Coleman limit and studies the
-finite-$Q$ deformation of the static-energy barrier and of the decay
-exponent.
+The detailed numerical conventions are described in [`Numerical_implementation.pdf`](Numerical_implementation.pdf).
 
 ---
 
@@ -48,265 +14,218 @@ exponent.
 
 ```text
 Qubble/
-├── Bubble_finder/                # main fixed Q bubble nucleation pipeline
-│   ├── __init__.py
-│   ├── potential_bubble.py       # scalar potential V(phi) and Omega(phi)
-│   ├── bounce_1d.py              # reduced 1D O(d) bounce solver
-│   ├── bounce2d.py               # 2D Euclidean (tau, r) Newton solver
-│   ├── ansatz_bubble.py          # O(4)/O(3)/O(1) seed construction
-│   ├── branching.py              # branch continuation from sphaleron-like roots
-│   ├── observables_1d.py         # 1D charge, energy, F_omega
-│   ├── observables_2d.py         # 2D charge/energy with tau=0 ghost reconstruction
-│   ├── rate_exponent.py          # F^bounce_{Q,beta} (background-subtracted)
-│   ├── minkowski_evolution_post_tunneling.py  # real-time evolution from tau=0
-│   ├── diagnostics_sanity.py     # Jacobian / background sanity checks
-│   ├── clean_analysis_helpers.py # reusable helpers for the main notebook
-│   ├── notebooks/
-│   │   ├── Bubble_Tunneling_2D.ipynb     # main paper notebook
-│   │   └── figures/                       # generated paper figures (PDF/PNG)
-│   ├── docs/                              # placeholder for technical PDF
-│   └── tests/
-│
-├── Q_ball_finder/                # auxiliary Q-ball / fixed charge solvers
-│   ├── __init__.py
-│   ├── potentials.py             # logistic Q-ball potential
-│   ├── bounce_solver.py          # general O(d) bounce
-│   ├── bounce2d.py               # 2D Q-ball bounce solver
-│   ├── ansatz.py, seeds.py, seed_selection.py
-│   ├── grid.py, nr_solver.py
-│   ├── observables2d.py, qball_observables.py
-│   ├── qball_scan.py             # frequency / charge scans
-│   ├── beta_scan_continuation.py # Euclidean-time extent continuation
-│   ├── rate_exponent.py
-│   ├── notebook_utils.py, diagnostics.py
-│   ├── notebooks/
-│   │   ├── q_ball_explanation.ipynb
-│   │   └── q_ball_2D_solution.ipynb
-│   ├── data/                     # cached solutions (mostly gitignored, see below)
-│   └── tests/
-│
-├── README.md                     # this file
-├── requirements.txt
-├── environment.yml
-├── CITATION.cff
-├── CONTRIBUTING.md
-├── LICENSE                       # MIT
-└── .gitignore
+├── Bubble_finder/              # main fixed-Q bubble-nucleation pipeline
+├── Q_ball_finder/              # auxiliary Q-ball / fixed-charge tooling
+├── Numerical_implementation.pdf
+└── README.md
 ```
 
-The two scientific subfolders carry their own README files with a more
-detailed explanation of conventions, files, and workflows:
+The two code folders have different roles.
 
-- `Bubble_finder/README.md` — main fixed $Q$ pipeline.
-- `Q_ball_finder/README.md` — Q-ball / fixed charge tunneling decay.
+`Bubble_finder/` is the main reproduction and analysis pipeline for *Globally Charged Vacuum Decay*.  It contains the scalar potential used in the paper, the 1D reduced bounce solvers, the full 2D fixed-$Q$ Euclidean solver, the residual-twist matching loop, the Euclidean action and charge/energy diagnostics, and the Minkowski continuation after nucleation.
+
+`Q_ball_finder/` is auxiliary.  It contains an earlier-generation implementation for Q-ball-like fixed-charge configurations and Q-ball decay scans.  It is useful for comparison with the Q-ball literature and also provides some shared numerical primitives, such as the staggered half-$\tau$ grid and Newton driver, but it is not the main path for reproducing the bubble-nucleation figures.
 
 ---
 
-## Scientific background
+## Physics problem
 
-Standard zero-temperature vacuum decay is described by Coleman's neutral O(4)
-bounce. When the initial state is a **homogeneous charged medium** with a
-conserved global charge $Q$, the standard Coleman picture has to be modified:
-
-1. The decay must be formulated in a definite charge sector, so the path
-   integral is **projected** onto fixed $Q$.
-2. The projection inserts a Lagrange multiplier conjugate to $Q$, which after
-   Wick rotation becomes a **residual twist $\eta_0$** in Euclidean time.
-3. The Euclidean saddle is generically **complex** in the original variables.
-   A real numerical formulation is recovered by treating $\phi$ and
-   $\bar\phi$ as independent Euclidean fields. Reality of the physical
-   continuation is then a derived property of the saddle, not an input.
-4. The relevant suppression compares the nontrivial bounce with the
-   homogeneous charged reference configuration **in the same charge sector**.
-
-Schematically, the fixed charge decay exponent is
+The theory is a complex scalar field with a global $U(1)$ symmetry,
 
 $$
-F_{Q,\beta}^{\rm bounce}
-= S_E[\phi_b,\bar\phi_b]-S_E[\phi_i,\bar\phi_i]+\eta_0\,Q,
+\Phi(t,\mathbf{x}) = {\rho(t,\mathbf{x}) \over \sqrt{2}} e^{i\theta(t,\mathbf{x})},
 $$
 
-where $\phi_b$ is the nontrivial Euclidean saddle, $\phi_i$ denotes the
-homogeneous charged reference, and $\eta_0$ is the residual twist.
+with conserved charge density
 
-The numerical pipeline:
+$$
+q = \rho^2 \dot\theta .
+$$
 
-- recovers the neutral Coleman O(4) bounce as $Q \to 0$,
-- shows that at finite $Q$ the bounce departs from exact O(4) symmetry,
-  the static-energy barrier is lowered, and the decay exponent decreases,
-- continues the Euclidean turning slice at $\tau=0$ to real Minkowski time
-  and exhibits charge rearrangement, phase-gradient energy near the wall,
-  and a subluminal terminal wall velocity even at zero temperature.
+The initial state is a homogeneous rotating charged state,
 
-A detailed presentation of the formalism is given in the paper. The
-self-contained technical description of the numerical implementation will be
-provided in `Bubble_finder/docs/numerical_implementation.pdf` (see
-`Bubble_finder/docs/README.md`).
+$$
+\Phi_i(t) = {\rho_i \over \sqrt{2}} e^{i\omega_i t},
+\qquad
+q_i = \omega_i \rho_i^2 .
+$$
+
+The decay is treated at fixed total charge.  This requires a charge projection in the Euclidean path integral.  At the saddle, the projection appears as a real exponential twist in Euclidean time.  The Euclidean fields are therefore not a field and its complex conjugate, but two independent fields,
+
+$$
+\varphi(\tau,r),\qquad \bar\varphi(\tau,r),
+$$
+
+which are recombined into a physical complex field only at the turning slice.  The fixed-$Q$ exponent computed by the code has the form
+
+$$
+F_{Q,\beta}
+=
+S_E[\varphi_b,\bar\varphi_b]
+-
+S_E[\varphi_i,\bar\varphi_i]
++
+\eta_0 Q,
+$$
+
+where $\eta_0$ is the residual twist after removing the trivial homogeneous Euclidean rotation.
+
+The real-time evolution starts from the Euclidean turning slice at $\tau=0$.  The modulus is at a turning point, but the phase still carries charge.  This is why the post-nucleation dynamics differs from neutral vacuum decay: charge rearrangement and phase-gradient energy can drive the bubble toward a subluminal terminal velocity.
+
+---
+
+## Main folder: `Bubble_finder/`
+
+This is the main code path.  The folder contains:
+
+| Component | Role |
+|---|---|
+| `potential_bubble.py` | scalar potential and derivatives used for the bubble-nucleation example. |
+| `bounce_1d.py` | reduced O(d)-symmetric 1D bounce solver, used for Coleman references and seed profiles. |
+| `ansatz_bubble.py` | construction of O(4), O(3), O(1), and homogeneous seeds on the 2D grid. |
+| `bounce2d.py` | main 2D Euclidean fixed-$Q$ solver with twisted boundary conditions and analytic sparse Jacobian. |
+| `observables_1d.py`, `observables_2d.py` | charge, energy, and diagnostic observables. |
+| `rate_exponent.py` | fixed-charge Euclidean action and tunnelling exponent. |
+| `minkowski_evolution_post_tunneling.py` | real-time evolution from the turning slice. |
+| `diagnostics_sanity.py` | solver sanity checks and Jacobian tests. |
+| `notebooks/` | analysis and figure-production notebooks. |
+| `tests/` | pytest tests for the bubble solver. |
+
+See [`Bubble_finder/README.md`](Bubble_finder/README.md) for a more detailed file-by-file description.
+
+---
+
+## Auxiliary folder: `Q_ball_finder/`
+
+This folder is retained for continuity with the Q-ball development path and for cross-checks.  Its boundary conditions are different from the homogeneous-medium bubble problem:
+
+- `Q_ball_finder/`: Q-ball / Q-cloud-type configurations approaching the symmetric vacuum at large radius.
+- `Bubble_finder/`: fixed-$Q$ bubbles approaching a homogeneous charged medium at large radius.
+
+The Q-ball folder includes a logistic Q-ball potential, 1D O(d) bounce tools, a 2D Q-ball fixed-charge solver, seed selection, $\beta$ continuation, $\tilde\omega$ scans, and Q-ball observables.
+
+See [`Q_ball_finder/README.md`](Q_ball_finder/README.md) for details.
 
 ---
 
 ## Installation
 
-Qubble targets Python ≥ 3.10 (tested with 3.11). The code does not contain
-compiled extensions; everything goes through NumPy and SciPy.
+The code is pure Python and is intended to be run from the repository root.
 
-### Using `pip` and a virtual environment
+A minimal environment is:
 
 ```bash
-git clone https://github.com/GiulioBarni/Qubble.git
-cd Qubble
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install numpy scipy matplotlib jupyter pytest
 ```
 
-To register the environment as a Jupyter kernel:
+If you run notebooks or scripts directly from the repository root, the local packages should be importable.  If needed, set
 
 ```bash
-python -m ipykernel install --user --name qubble --display-name "Python (qubble)"
+export PYTHONPATH="$PWD:$PYTHONPATH"
 ```
 
-### Using `conda`
-
-```bash
-git clone https://github.com/GiulioBarni/Qubble.git
-cd Qubble
-conda env create -f environment.yml
-conda activate qubble
-```
-
-### Sanity check
-
-```bash
-pytest Bubble_finder/tests
-pytest Q_ball_finder/tests
-```
-
-The test suite is intentionally light. It covers the 2D solver background
-exactness, the analytic Jacobian, a few Newton iterations, the 1D bounce
-solver on a quartic potential, and the Newton helper.
+before launching Jupyter.
 
 ---
 
-## Quick start
+## Quick checks
 
-The minimal workflow to reproduce the main paper results is:
-
-1. Install the dependencies (see above).
-2. Open the main notebook:
-   ```text
-   Bubble_finder/notebooks/Bubble_Tunneling_2D.ipynb
-   ```
-3. Run the **setup / model** cells (Sections 1–2). This sets the scalar
-   potential $V(\phi)$ used in the paper and chooses a reference frequency
-   $\omega$.
-4. Run the **1D neutral and reduced bounce** cells (Sections 3–5). These
-   produce the Coleman reference bounces and a 1D scan in $\omega$.
-5. Run the **2D solver setup and seeds** (Sections 6–9). This builds the
-   default 2D grid and constructs O(4)/O(3)/O(1) seeds.
-6. Run the **2D Newton solve and $\eta_0$ scan** (Sections 10–11). This
-   produces the fixed $Q$ saddle and computes the decay exponent.
-7. Run the **diagnostics** (Sections 12–13): static-energy decomposition,
-   parallel analyses for different seeds.
-8. Optionally run the **continuation scans** (Sections 14–16) — these
-   are the most expensive cells.
-9. Run the **post-tunnelling Minkowski evolution** (Section 17) to obtain
-   the wall-velocity and phase-gradient diagnostics.
-
-The final plotting cells (the "Plots for paper" subsections) **do not
-introduce new physics input**. They reorganise quantities that were already
-computed in the analysis cells above into publication-ready figures and
-save them to `Bubble_finder/notebooks/figures/`.
-
----
-
-## Reproducing the paper figures
-
-The paper figures are produced by the main notebook
-`Bubble_finder/notebooks/Bubble_Tunneling_2D.ipynb` and are written to
-`Bubble_finder/notebooks/figures/`. The auxiliary Q-ball notebooks in
-`Q_ball_finder/notebooks/` produce comparison figures and were used during
-the development of the formalism; they are not on the main paper figure
-critical path but they are kept for cross-checks and continuity with the
-Q-ball literature.
-
-The files in `Bubble_finder/notebooks/figures/` fall into four categories:
-
-| Category | Examples |
-|---|---|
-| **Paper figures** (PDF) | `potential_and_omega_vacua.pdf`, `o4_energy_static.pdf`, `o4_energy_static_Qneq0_vs_Coleman_Q0.pdf`, `o4_red_vs_1d_profiles.pdf`, `o4_interface_and_charge_flow.pdf`, `o4_fancy_full_symmetry_map.pdf`, `decay_rate_vs_beta.pdf`, `minkowski_combined_evolution.pdf`, `minkowski_all_energy_contributions.pdf`, … |
-| **Diagnostic plots** (PDF) | per-seed comparisons (`comparison_*.pdf`, `seed_*.pdf`, `solution_*.pdf`), continuation panels (`beta_continuation_*.pdf`), $\omega$-scan panels (`omega_scan_*.pdf`). |
-| **Development plots** (PNG) | older PNG snapshots kept for traceability (`bounce_profile.png`, `branch_scan_A.png`, …). |
-| **Cached intermediates** | `.npz` files in `Q_ball_finder/data/` (gitignored — see below). |
-
-> Some 2D Newton solves and continuation scans are computationally expensive
-> (minutes to tens of minutes per scan point on a workstation). The notebooks
-> use cached `.npz` solutions where available; see the *Data and cached
-> outputs* section below. Bitwise reproducibility across machines and library
-> versions is **not** guaranteed.
-
----
-
-## Data and cached outputs
-
-The repository ships with a small amount of binary data in `Q_ball_finder/data/`
-used by the auxiliary Q-ball pipeline:
-
-- `cloud_scan.txt` — small text file with a frequency scan, **kept in git**.
-- `Qball_solution_Q_353.npz`, `ansatz_solution_beta_55.npz` — example cached
-  solutions, **gitignored** (regenerable from `Q_ball_finder/notebooks/`).
-- `beta_scan_solutions/` — the heavy beta-scan dataset (~140 MB, dozens of
-  `.npz` files), **gitignored** and intended for external archiving. 
-  This is documented in `Q_ball_finder/README.md`.
-
-The main `Bubble_finder/` pipeline currently does not ship cached `.npz`
-solutions; the analysis is rerun from the notebook. If cached solutions are
-added in the future, they should also be archived externally and referenced
-from the notebooks.
-
-## Tests
-
-The project ships a small `pytest` suite:
+Run the fast tests with
 
 ```bash
-pytest                              # run everything
-pytest Bubble_finder/tests          # main 2D solver tests
-pytest Q_ball_finder/tests          # auxiliary Q-ball tests
+python -m pytest Bubble_finder/tests
+python -m pytest Q_ball_finder/tests
 ```
 
-Coverage is intentionally narrow: it locks in the background exactness of the
-2D solver, the analytic Jacobian against finite differences, a quartic 1D
-bounce reference, and the Newton helper. The tests are not a substitute for
-running the notebooks end-to-end on the paper figures.
+The full Euclidean and Minkowski production runs are more expensive than the tests.  They should be run through the notebooks or through dedicated scripts after the fast checks pass.
+
+---
+
+## Reproducing the main analysis
+
+The main analysis is organised around the notebooks in `Bubble_finder/notebooks/`.
+
+A typical workflow is:
+
+1. construct the homogeneous charged reference state for a chosen $\omega$;
+2. compute the reduced 1D O(d) profiles used as seeds;
+3. build the O(4), O(3), O(1), and homogeneous 2D ansatz families;
+4. solve the 2D Euclidean fixed-$Q$ boundary-value problem;
+5. tune the residual twist $\eta_0$ until the target charge is matched;
+6. compute the fixed-$Q$ exponent and the Euclidean energy/charge checks;
+7. continue the turning slice to Minkowski time;
+8. extract radius, velocity, charge redistribution, wall energy, and terminal-velocity diagnostics;
+9. run the post-processing cells that generate the publication figures.
+
+Heavy scans should be cached.  The notebooks are written so that scan cells can save intermediate results and later reload them, avoiding unnecessary reruns.
+
+---
+
+## Data and generated files
+
+Large generated files should not be committed to the public repository.  In particular, avoid committing:
+
+```text
+*.npz
+*.npy
+*.pkl
+*.mp4
+*.gif
+__pycache__/
+.ipynb_checkpoints/
+data/heavy_scans/
+```
+
+Small text caches that are needed for quick reproducibility may be tracked case by case.  Large scan outputs and videos should be regenerated locally or archived externally.
+
+---
+
+## Naming conventions and normalization warnings
+
+There are two common sources of mistakes.
+
+First, the paper uses the physical modulus $\rho$, while parts of the code use the solver-normalized field amplitude $\phi=\rho/\sqrt{2}$.  In particular, whenever a code variable is called `rho0`, check the local file documentation: in some solver contexts it denotes the homogeneous solver amplitude rather than the physical modulus.
+
+Second, the residual twist used in the numerical solver is not the full Euclidean twist.  The homogeneous Euclidean rotation has already been factored out.  The tuned variable is therefore
+
+$$
+\eta_0 = \eta_{\rm bounce} - \beta\omega_i .
+$$
+
+This is the quantity entering the fixed-charge Legendre term $\eta_0 Q$ in the rotated-frame implementation.
+
+---
+
+## Documentation
+
+- [`Numerical_implementation.pdf`](Numerical_implementation.pdf): self-contained technical notes on the numerical implementation.
+- [`Bubble_finder/README.md`](Bubble_finder/README.md): detailed documentation of the main bubble-nucleation code.
+- [`Q_ball_finder/README.md`](Q_ball_finder/README.md): detailed documentation of the auxiliary Q-ball code.
 
 ---
 
 ## Citation
 
-If you use Qubble, please cite the accompanying paper:
+If you use this code, please cite:
 
-> G. Barni and J. R. Espinosa,
-> *"Tunneling decay at fixed charge: nucleation theory"*,
-> arXiv:XXXX.XXXXX (2026).
+Giulio Barni and José R. Espinosa, “Globally Charged Vacuum Decay”, arXiv:2606.xxxxx.
 
-A machine-readable citation is provided in `CITATION.cff`. The arXiv and DOI
-fields will be filled in once the preprint and journal references are
-finalised.
-
----
-
-## License
-
-Qubble is released under the MIT License. See [`LICENSE`](LICENSE) for the
-full text.
+```bibtex
+@article{BarniEspinosa2026,
+  author       = {Barni, Giulio and Espinosa, Jos{\\'e} R.},
+  title        = {Globally Charged Vacuum Decay},
+  year         = {2026},
+  eprint       = {2606.xxxxx},
+  archivePrefix= {arXiv},
+  primaryClass = {hep-ph}
+}
+```
 
 ---
 
-## Contact
+## Status
 
-- **Giulio Barni** — IFT-UAM/CSIC, Madrid.
-- mail: giulio.barni@ift.csic.es or giulio.barni95@gmail.com
-- For bugs and questions, please open a
-  [GitHub issue](https://github.com/GiulioBarni/Qubble/issues).
-- See [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidance on filing issues or
-  submitting pull requests.
+This repository is a research codebase.  The main algorithms are documented and tested at the level needed to reproduce the results of *Globally Charged Vacuum Decay*, but the code is not a general-purpose vacuum-decay package.  When extending it to new potentials or boundary conditions, check charge conservation, Euclidean energy conservation, the $Q\to0$ limit, and the stability of the Minkowski continuation.

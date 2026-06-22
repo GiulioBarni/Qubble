@@ -1,15 +1,9 @@
-"""
-observables_1d.py — 1D-only charge and energy for O(3) bounce.
+"""1D charge, Minkowski energy, and grand-canonical functional for O(d) bounces.
 
-Single source of truth for 1D observables: Q, E_M (Minkowski energy), F_ω (grand-canonical
-functional), charge/energy density profiles, homogeneous ball Q/E in finite volume.
-
-Conventions:
-- Minkowski energy density: 𝓔_M = 1/2(∂r ρ)² + 1/2 ω² ρ² + V(ρ)  =>  E_M = 4π ∫ r² 𝓔_M dr.
-- Charge: Q = 4π ω ∫ r² φ² dr  (φ = ρ in the ansatz φ = ρ e^{iωt}).
-- Grand-canonical / constrained functional: F_ω = E_M − ω Q = 4π ∫ r² [ ½(∂r φ)² + Ω(φ) ],
-  with Ω(φ) = V(φ) − 1/2 ω² φ². Use F_ω for fixed-ω barrier comparisons, not for "physical energy".
+E_M = 4π ∫ r² [½(∂rρ)² + ½ω²ρ² + V(ρ)] dr;  Q = 4π ω ∫ r² φ² dr;
+F_ω = E_M − ωQ with Ω(φ) = V(φ) − ½ω²φ².
 """
+
 
 from __future__ import annotations
 
@@ -32,7 +26,7 @@ def compute_charge(r: np.ndarray, phi: np.ndarray, omega: float) -> float:
     return float(4.0 * np.pi * omega * simpson(r**2 * phi**2, x=r))
 
 
-# Alias for clarity in docs and notebook
+# Alias
 compute_charge_1d_spherical = compute_charge
 
 
@@ -278,7 +272,7 @@ def compute_free_energy_grandcanonical(
     return float(4.0 * np.pi * simpson(r_use**2 * integrand, x=r_use))
 
 
-# Alias for explicit "Minkowski energy" in notebook and docs
+# Alias (Minkowski energy)
 compute_energy_minkowski_1d_spherical = compute_energy_physical_1d_spherical
 
 

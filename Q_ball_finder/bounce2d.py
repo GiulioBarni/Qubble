@@ -1,6 +1,5 @@
-"""
-2D Q-ball bounce solver built from the notebook's "Second try" section.
-"""
+"""2D Q-ball bounce solver on the (τ, r) half-grid."""
+
 
 from __future__ import annotations
 
@@ -102,7 +101,7 @@ class QBall2DSolver:
         _, self.Vprime, self.Vsecond = logistic_potential_rho(params)
 
     # ----------------------------------
-    # Helpers
+    # Internal helpers
     # ----------------------------------
 
     def _unpack(self, vec: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -111,7 +110,7 @@ class QBall2DSolver:
     def _pack(self, y: np.ndarray, ybar: np.ndarray) -> np.ndarray:
         return pack_fields(y, ybar)
 
-    # Backwards-compatible aliases used in notebooks / external scripts
+    # Aliases
     def unpack(self, vec: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return self._unpack(vec)
 
@@ -681,7 +680,7 @@ def scan_eta_to_match_charge(
             f"Eta scan aborted: solution does not converge at final eta* = {eta_star:.6f}. "
             f"Original error: {e}"
         ) from e
-    # DO NOT overwrite solution_star.settings as it already has the correct eta0 from solve_bounce_for_eta
+    # settings.eta0 is already set in solve_bounce_for_eta
     history.append(EtaScanHistoryEntry(eta_star, charge_star))
 
     if verbose:

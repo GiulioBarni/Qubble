@@ -1,12 +1,5 @@
-"""
-Seed selection based on short Newton basin test with multi-term scoring.
+"""Seed selection by residual norm over ansatz parameter grids."""
 
-This module provides seed selection that evaluates candidates by running
-a short Newton iteration (basin test) and scoring with multiple criteria:
-- Residual norm (secondary)
-- Plateau enforcement (rho0 ≈ target)
-- Cloud-like rejection (tau-dependence)
-"""
 
 from __future__ import annotations
 

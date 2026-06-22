@@ -534,7 +534,7 @@ def compute_negative_mode_1d(
     potential,                 # PotentialModel
     y1d: np.ndarray,           # y=r(phi-phi_false)
     ybar1d: np.ndarray,
-    omega: float,              # REQUIRED for Q-ball-like negative mode
+    omega: float,              # frequency for the negative-mode ansatz
     gamma_scan: Tuple[float, float] = (0.01, 0.5),
     n_scan: int = 80,
     sign_convention: int = +1,
@@ -587,7 +587,7 @@ def compute_negative_mode_1d(
 # ---------------------------------------------------------------------
 
 def _estimate_rho_hom_from_tail(phi: np.ndarray, phibar: np.ndarray, m: int = 8) -> float:
-    """Robust estimate of rho_hom ~ sqrt(2*Re(phi*phibar)) from the tail."""
+    """Estimate ρ_hom ≈ √(2 Re(φ φ̄)) from the tail."""
     m = int(max(1, min(m, phi.size)))
     s_tail = np.mean((phi[-m:] * phibar[-m:]).real)
     return float(np.sqrt(2.0 * max(s_tail, 0.0)))
@@ -677,7 +677,7 @@ def build_seed_bubble(
     Y0 = y_bg + params.amp * np.outer(g_tau, y1d_loc)
     YB0 = ybar_bg + params.amp * np.outer(g_tau, ybar1d_loc)
 
-    # --- Negative mode (Q-ball-like, 2-component)
+    # Negative mode (two-component)
     if neg_mode_override is not None:
         xi_y, xi_ybar, lam = neg_mode_override
         xi_y = np.asarray(xi_y, float).reshape(-1)
@@ -805,7 +805,7 @@ def build_twisted_seed_from_static(
 
 
 # ---------------------------------------------------------------------
-# Robust negative mode from 1D bounce (centralized for notebooks)
+# Negative mode from the 1D bounce
 # ---------------------------------------------------------------------
 
 from dataclasses import dataclass
@@ -816,7 +816,7 @@ import numpy as np
 
 @dataclass
 class NegativeModeResult:
-    """Robust result of compute_negative_mode_from_bounce."""
+    """Negative-mode data from compute_negative_mode_from_bounce."""
     gamma: float
     r: np.ndarray
     xi_y: np.ndarray
@@ -1038,7 +1038,7 @@ def compute_negative_mode_from_bounce(
     warn_if_origin_dominates: bool = True,
 ):
     """
-    Robust computation of the negative mode around the 1D critical bubble.
+    Negative mode around the 1D critical bubble.
 
     Improvements over the old version:
       - grid check
@@ -1216,7 +1216,7 @@ def plot_Dp_shooting_verification(
     show_signed_panel: bool = True,
 ) -> None:
     """
-    Robust D_p verification plot.
+    D_p verification plot.
 
     Shows:
       - D_p(gamma) with sign
@@ -1434,7 +1434,7 @@ def run_best_seed_selection(
 
 
 # ---------------------------------------------------------------------
-# Best-seed selection (moved from best_selection_seed.py)
+# Best-seed selection
 # ---------------------------------------------------------------------
 
 @dataclass

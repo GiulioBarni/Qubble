@@ -32,13 +32,11 @@ def compute_dimensionless_charge(
     omega: float,
 ) -> float:
     """
-    Compute ``g² Q`` for a Q-ball profile following the conventions used in the
-    original notebook:
+    Dimensionless charge g²Q for a Q-ball profile:
 
       g² Q = 4π · (ω/m) ∫ dr̃ r̃² ϕ²,       r̃ = m r,   ϕ = χ / v,
 
-    where ``χ(r) = solution.phi`` is the bounce output.  This combination is
-    dimensionless and is typically sufficient to identify the critical charge.
+    where χ(r) = solution.phi.  Used to locate the critical charge.
     """
     r_phys = _ensure_array(solution.r)
     chi = _ensure_array(solution.phi)

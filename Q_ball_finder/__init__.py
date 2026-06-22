@@ -1,7 +1,4 @@
-"""
-Lightweight namespace package exposing the main building blocks for the
-Q-ball computation workflow.
-"""
+"""Q_ball_finder public API."""
 
 from .bounce_solver import *  # noqa: F401, F403
 from .potentials import *  # noqa: F401, F403

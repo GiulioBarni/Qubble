@@ -1,12 +1,8 @@
-"""
-Potential functions for bubble nucleation.
+"""Scalar potential V(φ) and reduced grand potential Ω(φ) for the bubble model.
 
-This module provides the potential V(φ) and its derivatives for the bubble nucleation
-model. The potential is:
-    V(φ) = -1/2 + (φ - 1)² [2φ - 5 + (2 - φ)² log((2-φ)²(φ₀-1)²/((φ-1)²(φ₀-2)²))]
-
-This potential has a false minimum at φ = v1 = 1 and true minimum at φ = v2 = 2.
+False minimum at φ = v₁, true minimum at φ = v₂ (defaults v₁ = 1, v₂ = 2).
 """
+
 
 from __future__ import annotations
 
@@ -139,7 +135,7 @@ def d2V_dphi2(phi, phi0, v1, v2):
     """
     Second derivative of V(φ) with respect to φ.
 
-    Computed numerically for robustness.
+    Computed numerically.
 
     Parameters
     ----------
@@ -388,7 +384,7 @@ def V_Wp_of_s(s, phi0, v1, v2):
     """
     Derivative of V_W_of_s(s) with respect to s: Wp(s) = d/ds W(s)
     
-    IMPORTANT: This returns dW/ds (derivative with respect to s = phi*phibar),
+    Returns dW/ds (derivative with respect to s = phi*phibar),
     NOT dW/drho (derivative with respect to rho = sqrt(2*s)).
 
     Using chain rule: d/ds W(s) = d/dρ W(s(ρ)) * dρ/ds

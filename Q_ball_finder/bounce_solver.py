@@ -1,7 +1,5 @@
 """
-General-purpose O(d) bounce solver with support for potentials that are either
-bistable or unbounded on one side.  The implementation distils the logic that
-was prototyped in the original notebook into a reusable function.
+General-purpose O(d) bounce solver for bistable or one-sided-unbounded potentials.
 """
 
 from __future__ import annotations
@@ -35,11 +33,7 @@ def find_local_extrema(
     x_max: float,
     ngrid: int = 2001,
 ) -> list[Dict[str, float]]:
-    """
-    Scan the interval [x_min, x_max] and locate local minima/maxima.  The
-    function is intentionally brute-force but robust, relying on a coarse grid
-    and local one-dimensional optimisations to refine each extremum.
-    """
+    """Scan [x_min, x_max] for local extrema (coarse grid plus local refinement)."""
     xs = np.linspace(x_min, x_max, ngrid)
     Vs = np.array([V(x) for x in xs], dtype=float)
     extrema: list[Dict[str, float]] = []

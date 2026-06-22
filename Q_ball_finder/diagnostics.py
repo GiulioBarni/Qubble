@@ -1,9 +1,5 @@
-"""
-Diagnostic functions for 2D bounce solutions.
+"""Observables at fixed τ, including ghost reconstruction at τ = 0."""
 
-This module provides functions for computing observables at specific tau values,
-using ghost reconstruction to evaluate quantities at τ=0 (which is not on the grid).
-"""
 
 import numpy as np
 from .grid import RadialTimeGrid
@@ -93,7 +89,7 @@ def compute_energy_tau0_ghost(
     
     # Reconstruct tau-derivatives of fields at τ=0:
     # φ_τ(0) = (y_t0 + omega*y0)/r, φ̄_τ(0) = (ybar_t0 - omega*ybar0)/r
-    # (Note: at τ=0, e^{ω*0}=1, so no exponential factor)
+    # At τ = 0 the rotation factor is unity
     phi_tau0 = (y_t0 + omega * y0) / r
     phibar_tau0 = (ybar_t0 - omega * ybar0) / r
     
@@ -107,7 +103,7 @@ def compute_energy_tau0_ghost(
     V = V_of_s(s)
     
     # Energy density (Eq. 2.4):
-    # Note: the sign convention matches compute_energy (negative for tau term due to euclidean metric)
+    # Sign matches compute_energy (Euclidean metric)
     dens = -(phi_tau0 * phibar_tau0) + (phi_r0 * phibar_r0) + V
     
     # Integrate:

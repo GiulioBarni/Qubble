@@ -1,63 +1,55 @@
 cff-version: 1.2.0
 message: >-
   If you use Qubble, please cite the accompanying paper:
-  "Tunneling decay at fixed charge: nucleation theory" by
-  G. Barni and J. R. Espinosa.
+  "Globally Charged Vacuum Decay" by G. Barni and J. R. Espinosa,
+  arXiv:2606.xxxxx.
 title: "Qubble"
 abstract: >-
-  Qubble is the research code accompanying the paper
-  "Tunneling decay at fixed charge: nucleation theory".
-  It provides the numerical implementation used to study
-  semiclassical bubble nucleation from a homogeneous charged
-  medium at fixed conserved global charge Q. Qubble solves the
-  charged Euclidean saddle in a real doubled-field formulation
-  (independent fields phi and phibar) with twisted Euclidean-time
-  boundary conditions induced by charge projection, and continues
-  the resulting turning slice to real Minkowski time.
+  Qubble is the numerical code accompanying "Globally Charged Vacuum Decay".
+  It constructs fixed-charge Euclidean tunnelling saddles for a homogeneous
+  medium carrying a conserved global U(1) charge, computes the fixed-Q
+  suppression exponent, and uses the Euclidean turning slice as initial data
+  for the subsequent Minkowski evolution.
 type: software
 authors:
   - family-names: Barni
     given-names: Giulio
-    affiliation: "IFT-UAM/CSIC, Madrid"
+    affiliation: "Instituto de Física Teórica IFT-UAM/CSIC, Cantoblanco, E-28049, Madrid, Spain"
   - family-names: Espinosa
     given-names: "José R."
-    affiliation: "IFT-UAM/CSIC, Madrid"
+    affiliation: "Instituto de Física Teórica IFT-UAM/CSIC, Cantoblanco, E-28049, Madrid, Spain"
 license: MIT
 repository-code: "https://github.com/GiulioBarni/Qubble"
 keywords:
-  - vacuum decay
-  - bubble nucleation
-  - false vacuum
-  - finite charge
+  - fixed charge
+  - global U(1) charge
+  - charged vacuum decay
+  - twisted Euclidean boundary conditions
+  - independent Euclidean fields
+  - residual twist eta0
+  - fixed-Q bounce
+  - homogeneous charged medium
   - Euclidean saddle
-  - O(4) bounce
-  - Q-ball
-  - semiclassical
-  - twisted boundary conditions
+  - Minkowski continuation
+  - terminal wall velocity
 
 # -----------------------------------------------------------------------------
 # Preferred citation: companion paper.
-# Replace the placeholder arXiv/DOI fields below once the paper is on arXiv
-# and/or has a journal DOI.
+# Update the arXiv identifier below once the final number is known.
 # -----------------------------------------------------------------------------
 preferred-citation:
   type: article
   authors:
     - family-names: Barni
       given-names: Giulio
+      affiliation: "Instituto de Física Teórica IFT-UAM/CSIC, Cantoblanco, E-28049, Madrid, Spain"
     - family-names: Espinosa
       given-names: "José R."
-  title: "Tunneling decay at fixed charge: nucleation theory"
+      affiliation: "Instituto de Física Teórica IFT-UAM/CSIC, Cantoblanco, E-28049, Madrid, Spain"
+  title: "Globally Charged Vacuum Decay"
   year: 2026
-  # Placeholders — update before publication:
-  # journal: ""
-  # volume: ""
-  # issue: ""
-  # start: ""
-  # end: ""
-  # doi: "10.XXXX/XXXXXXX"
-  # url: "https://arxiv.org/abs/XXXX.XXXXX"
+  url: "https://arxiv.org/abs/2606.xxxxx"
   identifiers:
     - type: other
-      value: "arXiv:XXXX.XXXXX"
-      description: "arXiv preprint identifier (placeholder)"
+      value: "arXiv:2606.xxxxx"
+      description: "arXiv preprint identifier (placeholder until final number is assigned)"

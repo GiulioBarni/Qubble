@@ -1,10 +1,5 @@
-"""
-Robust sanity checks for Bubble2DSolver:
-- Background homogeneous solution verification
-- Tau-independent 1D bubble embedding at eta=0
+"""Sanity checks for Bubble2DSolver: homogeneous background, 1D/2D consistency, conventions."""
 
-All comments in English. No physics convention changes without explicit documentation.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -128,7 +123,7 @@ def residual_report_compact(
 
 
 # -----------------------------------------------------------------------------
-# Checklist helpers: explicit guards for common failure modes
+# Regression checklist
 # -----------------------------------------------------------------------------
 def checklist_potential_convention(solver, dU) -> dict:
     """
@@ -172,7 +167,7 @@ def checklist_eta0_for_tau_indep(solver) -> dict:
 
 
 # -----------------------------------------------------------------------------
-# PART 1 — Model identity report (1D vs 2D equation comparison)
+# 1D vs 2D equation identity
 # -----------------------------------------------------------------------------
 
 def model_identity_report(solver, dU, d2U, phi0_pot, v1, v2) -> Dict[str, Any]:
@@ -206,7 +201,7 @@ def model_identity_report(solver, dU, d2U, phi0_pot, v1, v2) -> Dict[str, Any]:
     report.append("(b) Tau-independent (d/dtau=0), eta0=0 reduction of 2D PDE:")
     report.append("  - y_t=0, y_tt=0. For real phi_rot=phibar_rot: y=ybar, y_tot=r*phi.")
     report.append("  - y_rr = 2*phi' + r*phi'' (from y = r*(phi-rho0))")
-    report.append("  - Fy = y_rr + A_coef*y_tot, A_coef = 2*(omega^2 - W) [FIXED for 1D match]")
+    report.append("  - Fy = y_rr + A_coef*y_tot, A_coef = 2*(omega^2 - W) ")
     report.append("  - W = dU(rho)/(2*rho), so A_coef*phi = 2*omega^2*phi - dV_dphi")
     report.append("  - REDUCED 2D (fixed): phi'' + 2*phi'/r + 2*omega^2*phi - dV_dphi(phi) = 0")
     report.append("")
@@ -249,7 +244,7 @@ def model_identity_report(solver, dU, d2U, phi0_pot, v1, v2) -> Dict[str, Any]:
 
 
 # -----------------------------------------------------------------------------
-# PART 2 — Local ODE residual comparison and bulk vs boundary
+# Local ODE residual; bulk vs boundary
 # -----------------------------------------------------------------------------
 
 def local_ode_residual_comparison(
@@ -290,7 +285,7 @@ def local_ode_residual_comparison(
     dOmega = np.array([dOmega_dphi_fn(phi_i, phi0_pot, v1, v2, omega) for phi_i in phi_in])
     res_1d = phi_pp_in + 2.0 * phi_p_in / r_in - dOmega
 
-    # Residual_2D_reduced (with factor-2 fix): phi'' + 2*phi'/r + 2*(omega^2 - W)*phi
+    # Residual_2D_reduced : phi'' + 2*phi'/r + 2*(omega^2 - W)*phi
     dU_vals = dU(phi_in)
     W = np.where(np.abs(phi_in) > 1e-12, dU_vals / (2.0 * phi_in), 0.0)
     A_coef = 2.0 * (omega**2 - W)
@@ -391,7 +386,7 @@ def bulk_vs_boundary_with_bc_compare(
 
 
 # -----------------------------------------------------------------------------
-# PART 3 — Potential convention audit
+# Potential convention audit
 # -----------------------------------------------------------------------------
 
 def potential_convention_audit(
@@ -420,7 +415,7 @@ def potential_convention_audit(
         dU_val = float(dU(np.array([r]))[0])
         W_2d = dU_val / (2.0 * r)
         force_1d = dV - 2.0 * omega**2 * r
-        # 2D reduced (with factor-2 fix): Fy += 2*(omega^2 - W)*y_tot => phi'' + 2*phi'/r = dV/dphi - 2*omega^2*phi
+        # 2D reduced : Fy += 2*(omega^2 - W)*y_tot => phi'' + 2*phi'/r = dV/dphi - 2*omega^2*phi
         # So force_2d = dV - 2*omega^2*r, same as force_1d.
         force_2d_reduced = dV - 2.0 * omega**2 * r
         rows.append(
@@ -439,7 +434,7 @@ def potential_convention_audit(
 
 
 # -----------------------------------------------------------------------------
-# PART 4 — Charge definition report
+# Charge definitions
 # -----------------------------------------------------------------------------
 
 def charge_definition_report() -> Dict[str, Any]:
@@ -470,7 +465,7 @@ def charge_definition_report() -> Dict[str, Any]:
 
 
 # -----------------------------------------------------------------------------
-# Regression checklist (callable from notebook)
+# Regression checklist
 # -----------------------------------------------------------------------------
 
 def run_regression_checks(

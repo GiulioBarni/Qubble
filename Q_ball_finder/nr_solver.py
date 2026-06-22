@@ -1,5 +1,5 @@
 """
-Generic Newton–Raphson utilities used by the 2D bounce solver.
+Newton–Raphson driver for the 2D bounce solvers.
 """
 
 from __future__ import annotations
@@ -15,13 +15,7 @@ ArrayLike = np.ndarray | Sequence[float]
 
 
 class NewtonConvergenceError(RuntimeError):
-    """
-    Exception raised when Newton-Raphson iteration fails to converge.
-    
-    This is raised when the residual norm exceeds a threshold (typically 10^10),
-    indicating that the solution is diverging and further iterations are unlikely
-    to succeed.
-    """
+    """Raised when ‖F‖ exceeds the divergence threshold during Newton iteration."""
     pass
 
 

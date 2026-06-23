@@ -1,7 +1,7 @@
 # `Bubble_finder/`
 
 Main reproduction and analysis pipeline for *Globally Charged Vacuum Decay*
-(forthcoming as arXiv:2606.xxxxx). This folder contains the code that constructs
+([arXiv:2606.21653](https://arxiv.org/abs/2606.21653)). This folder contains the code that constructs
 the fixed-$Q$ Euclidean saddle at fixed global $U(1)$ charge, computes the
 corresponding semiclassical exponent, and continues the turning slice to real
 time.

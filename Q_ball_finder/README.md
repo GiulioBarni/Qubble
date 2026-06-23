@@ -11,7 +11,7 @@ representation), but uses a different scalar potential and is **not** the
 main reproduction pipeline for *Globally Charged Vacuum Decay*.
 
 For the main paper pipeline, see [`Bubble_finder/README.md`](../Bubble_finder/README.md)
-(*Globally Charged Vacuum Decay*, forthcoming as arXiv:2606.xxxxx).
+(*Globally Charged Vacuum Decay*, [arXiv:2606.21653](https://arxiv.org/abs/2606.21653)).
 
 ---
 
@@ -179,7 +179,7 @@ through soft imports, so this folder is part of the runtime dependency
 graph of the main pipeline.
 
 If you are reproducing the figures of *Globally Charged Vacuum Decay*
-(arXiv:2606.xxxxx), the entry point is
+([arXiv:2606.21653](https://arxiv.org/abs/2606.21653)), the entry point is
 `Bubble_finder/notebooks/Bubble_Tunneling_2D_public.ipynb`. The notebooks in
 this folder are useful for cross-checks against the Q-ball literature and for
 exploring the shared infrastructure, but they are not the paper's

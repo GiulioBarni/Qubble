@@ -2,7 +2,7 @@
 
 Numerical code for semiclassical charged vacuum decay at fixed global $U(1)$ charge.
 
-Qubble is the numerical code accompanying *Globally Charged Vacuum Decay* (forthcoming as arXiv:2606.xxxxx).  It constructs fixed-charge Euclidean tunnelling saddles for a homogeneous medium carrying a conserved global $U(1)$ charge, computes the fixed-$Q$ suppression exponent, and uses the Euclidean turning slice as initial data for the subsequent Minkowski evolution.
+Qubble is the numerical code accompanying *Globally Charged Vacuum Decay* ([arXiv:2606.21653](https://arxiv.org/abs/2606.21653)).  It constructs fixed-charge Euclidean tunnelling saddles for a homogeneous medium carrying a conserved global $U(1)$ charge, computes the fixed-$Q$ suppression exponent, and uses the Euclidean turning slice as initial data for the subsequent Minkowski evolution.
 
 At finite charge the tunnelling problem is not the ordinary Coleman bounce problem.  The path integral must be projected onto a fixed charge sector, the Euclidean fields obey twisted Euclidean boundary conditions as independent Euclidean fields, and the saddle is naturally formulated in terms of two independent fields with a residual twist $\eta_0$.  The implementation follows this structure directly: it solves a two-dimensional boundary-value problem in $(r,\tau)$, tunes $\eta_0$ to impose the target charge, and then evolves the resulting bubble in real time.
 
@@ -184,16 +184,18 @@ This is the quantity entering the fixed-charge Legendre term $\eta_0 Q$ in the r
 
 If you use this code, please cite:
 
-Giulio Barni and José R. Espinosa, “Globally Charged Vacuum Decay”, arXiv:2606.xxxxx.
+Giulio Barni and José R. Espinosa, “Globally Charged Vacuum Decay”, [arXiv:2606.21653](https://arxiv.org/abs/2606.21653).
 
 ```bibtex
 @article{BarniEspinosa2026,
   author       = {Barni, Giulio and Espinosa, Jos{\\'e} R.},
   title        = {Globally Charged Vacuum Decay},
   year         = {2026},
-  eprint       = {2606.xxxxx},
+  eprint       = {2606.21653},
   archivePrefix= {arXiv},
-  primaryClass = {hep-ph}
+  primaryClass = {hep-ph},
+  url          = {https://arxiv.org/abs/2606.21653},
+  doi          = {10.48550/arXiv.2606.21653}
 }
 ```
 

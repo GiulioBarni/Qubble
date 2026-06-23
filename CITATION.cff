@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: >-
   If you use Qubble, please cite the accompanying paper:
   "Globally Charged Vacuum Decay" by G. Barni and J. R. Espinosa,
-  arXiv:2606.xxxxx.
+  arXiv:2606.21653.
 title: "Qubble"
 abstract: >-
   Qubble is the numerical code accompanying "Globally Charged Vacuum Decay".
@@ -33,10 +33,6 @@ keywords:
   - Minkowski continuation
   - terminal wall velocity
 
-# -----------------------------------------------------------------------------
-# Preferred citation: companion paper.
-# Update the arXiv identifier below once the final number is known.
-# -----------------------------------------------------------------------------
 preferred-citation:
   type: article
   authors:
@@ -48,8 +44,8 @@ preferred-citation:
       affiliation: "Instituto de Física Teórica IFT-UAM/CSIC, Cantoblanco, E-28049, Madrid, Spain"
   title: "Globally Charged Vacuum Decay"
   year: 2026
-  url: "https://arxiv.org/abs/2606.xxxxx"
+  url: "https://arxiv.org/abs/2606.21653"
+  doi: "10.48550/arXiv.2606.21653"
   identifiers:
-    - type: other
-      value: "arXiv:2606.xxxxx"
-      description: "arXiv preprint identifier (placeholder until final number is assigned)"
+    - type: arxiv
+      value: "2606.21653"

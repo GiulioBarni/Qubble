@@ -1,7 +1,7 @@
 # Contributing to Qubble
 
 Qubble is the research code accompanying *Globally Charged Vacuum Decay*
-(forthcoming as arXiv:2606.xxxxx) by G. Barni and J. R. Espinosa. It is primarily a
+([arXiv:2606.21653](https://arxiv.org/abs/2606.21653)) by G. Barni and J. R. Espinosa. It is primarily a
 **publication reproducibility companion**, not a general-purpose finite-density
 tunnelling package. Contributions are welcome, but please read this short note
 before opening an issue or a pull request.
